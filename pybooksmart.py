@@ -1,6 +1,27 @@
 from bs4 import BeautifulSoup
 from xml.sax import saxutils
+import ezodf
+
 import sys
+
+from ezodf.const import ALL_NSMAP
+from lxml.etree import QName, Element
+
+#from imagefile import ImageObject
+
+def ns(combined_name):
+    prefix,name = combined_name.split(':')
+    return "{%s}%s" % (ALL_NSMAP[prefix], name)
+
+class ImageObject(ezodf.filemanager.FileObject):
+
+    def __init__(self, name, filename):
+        super(ImageObject, self).__init__(name, None)
+        self.image_filename = filename
+
+    def tobytes(self):
+        imagefile = open(self.image_filename, 'rb')
+        return imagefile.read()
 
 class javaxml_exception(Exception):
     pass
@@ -73,14 +94,14 @@ def javaxml_to_python(object_):
                         print ("we got: ",to_add.name)
                         print (operation)
                         raise javaxml_exception("unrecognized dict value")
-                    break
+                    break # we only expect two xml elements in a hashmap, and we now have both
             else:
                 print ("we see:", operation["method"])
                 raise javaxml_exception("unrecognized dict operation")
 
     elif object_["class"] == "java.awt.Color":
         current_object = {}
-        current_object["id"] = object_['id']
+        current_object["color_id"] = object_['id']
 
         red = None
         green = None
@@ -122,33 +143,199 @@ for pl in soup.find_all("pagesList"):
 if pagesList:
     pagesList = [page["id"] for page in pagesList]
 
-width = soup.Book["width"]
-height = soup.Book["height"]
+width = int(soup.Book["width"])
+height = int(soup.Book["height"])
 
 print (width, height)
 
+doc = ezodf.newdoc('odt','bookout.odt','blurb.ott')
+page_layout = doc.styles.automatic_styles.xmlnode.find(ns('style:page-layout'))
+page_layout_properties = page_layout.find(ns('style:page-layout-properties'))
+page_layout_properties.attrib[ns('fo:page-width')] = "%dpt" % width
+page_layout_properties.attrib[ns('fo:page-height')] = "%dpt" % height
+
+if width > height:
+    page_layout_properties.attrib[ns('style:print-orientation')] = "landscape"
+else:
+    page_layout_properties.attrib[ns('style:print-orientation')] = "portrait"
+
+# create a parent Frame style
+
+style_style = Element(ns('style:style'))
+style_style.attrib[ns('style:family')] = 'graphic'
+style_style.attrib[ns('style:name')] = 'Frame'
+
+style_graphic_properties = Element(ns('style:graphic-properties'))
+style_graphic_properties.attrib[ns('text:anchor-type')] = 'paragraph'
+style_graphic_properties.attrib[ns('svg:x')] = '0in'
+style_graphic_properties.attrib[ns('svg:y')] = '0in'
+style_graphic_properties.attrib[ns('fo:margin-left')] = '0.0791in'
+style_graphic_properties.attrib[ns('fo:margin-right')] = '0.0791in'
+style_graphic_properties.attrib[ns('fo:margin-top')] = '0.0791in'
+style_graphic_properties.attrib[ns('fo:margin-bottom')] = '0.0791in'
+style_graphic_properties.attrib[ns('style:wrap')] = 'parallel'
+style_graphic_properties.attrib[ns('style:number-wrapped-paragraphs')] = 'no-limit'
+style_graphic_properties.attrib[ns('style:wrap-contour')] = 'false'
+style_graphic_properties.attrib[ns('style:vertical-pos')] = 'center'
+style_graphic_properties.attrib[ns('style:vertical-rel')] = 'paragraph-content'
+style_graphic_properties.attrib[ns('style:horizontal-pos')] = 'center'
+style_graphic_properties.attrib[ns('style:horizontal-rel')] = 'paragraph-content'
+style_graphic_properties.attrib[ns('fo:padding')] = '0.0591in'
+style_graphic_properties.attrib[ns('fo:border')] = '0.06pt solid #000000'
+
+style_style.append(style_graphic_properties)
+doc.styles.styles.xmlnode.append(style_style)
+
+# create a automatic style paragraph style for our page break.  We can
+# use the same one for each page break paragraph.  Word processor will
+# likely rename it, but that's okay.
+
+# <style:style style:parent-style-name="Standard" style:family="paragraph" style:name="SOMENAME">
+#   <style:paragraph-properties fo:break-before="page"/>
+# </style:style>
+
+style_style = Element(ns('style:style'))
+style_style.attrib[ns('style:family')] = 'paragraph'
+style_style.attrib[ns('style:name')] = 'BlurbPageBreak1'
+style_style.attrib[ns('style:parent-style-name')] = 'Standard'
+
+style_paragraph_properties = Element(ns('style:paragraph-properties'))
+style_paragraph_properties.attrib[ns('fo:break-before')] = 'page'
+
+style_style.append(style_paragraph_properties)
+
+doc.content.automatic_styles.xmlnode.append(style_style)
+
+
+#style for drawing boxes (temporary)
+style_style = Element(ns('style:style'))
+style_style.attrib[ns('style:family')] = 'graphic'
+style_style.attrib[ns('style:name')] = 'blurbboxstyle'
+style_style.attrib[ns('style:parent-style-name')] = 'Frame'
+
+graphic_properties = Element(ns('style:graphic-properties'))
+#graphic_properties.attrib[ns('fo:border')] = '1pt solid #000000'
+graphic_properties.attrib[ns('fo:margin-bottom')] = '0in'
+#graphic_properties.attrib[ns('fo:margin-top')] = '0in'
+#graphic_properties.attrib[ns('fo:margin-left')] = '0in'
+#graphic_properties.attrib[ns('fo:margin-right')] = '0in'
+graphic_properties.attrib[ns('fo:padding')] = '0in'
+graphic_properties.attrib[ns('style:horizontal-pos')] = 'from-left'
+graphic_properties.attrib[ns('style:vertical-pos')] = 'from-top'
+graphic_properties.attrib[ns('style:vertical-rel')] = 'page'
+graphic_properties.attrib[ns('style:horizontal-rel')] = 'page'
+graphic_properties.attrib[ns('style:wrap')] = 'run-through'
+
+style_style.append(graphic_properties)
+doc.content.automatic_styles.xmlnode.append(style_style)
+
+
+
+frame_count=1
 for pageno, page in enumerate(pagesList):
+    page_item_count=0
     print ("Processing page %d (%s):" % (pageno,page))
+    if pageno > 0:
+        # insert a page break
+        
+        # Add a new page break paragraph to the body
+        paragraph = Element(ns('text:p'))
+        paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreak1'
+
+        doc.body.xmlnode.append(paragraph)
+         
+    paragraph = Element(ns('text:p'))
+    paragraph.text='Page %d' % pageno
+
+    doc.body.xmlnode.append(paragraph)
+
+
+    page_info = soup.find("Page", id=page)
+
+    print (page_info.attrs)
+
     items = soup.find_all(parentId=page)
+
     for item in items:
-        print (item.name)
-        print (item["re"])
+
+        # get x,y, width, height coords
+        coord = [int(x) for x in item['re'].split(',')]
+
+        print (coord)
+        print ([x / 72.0 for x in coord])
+
+
+        draw_frame = Element(ns('draw:frame'))
+        draw_frame.attrib[ns('draw:name')] = 'Frame%d' % (frame_count)
+        draw_frame.attrib[ns('draw:style-name')] = 'blurbboxstyle'
+        draw_frame.attrib[ns('svg:width')] = '%dpt' % coord[2]
+        #draw_frame.attrib[ns('svg:height')] = '%dpt' % coord[3]
+        draw_frame.attrib[ns('svg:x')] = '%dpt' % coord[0]
+        draw_frame.attrib[ns('svg:y')] = '%dpt' % coord[1]
+        draw_frame.attrib[ns('text:anchor-type')] = 'page'
+        draw_frame.attrib[ns('text:anchor-page-number')] = '%d' % (pageno + 1)
+        draw_frame.attrib[ns('draw:z-index')] = '%d' % (page_item_count+1)
+        doc.body.xmlnode.insert(2,draw_frame)
+
+
+
+        page_item_count += 1
+        frame_count +=1
 
         if item.name == "ImageContent":
             if (item.has_attr("content")):
+                booksmart_image=item["content"]
+                if booksmart_image[:8] != 'booklogo':
+                    a = ImageObject('Pictures/%s.jpg' % booksmart_image, 
+                                    'library/%s.original' % booksmart_image)
+
+                    doc.filemanager.directory[booksmart_image] = a
                 print ("%s.original" % item["content"])
+
+                transformations = item.find_all("TransformEffect")
+                x = int(transformations[0]['x'])
+                y = int(transformations[0]['y'])
+                zoom = int(transformations[0]['zoom'])
+
+                # enlarge image dimensions by zoom.
+
+                # if x is negative, crop on the left, set x to 0
+                # if y is negative, crop on the top, set y to 0
+                # if (image.width - left crop) > coord[2], crop on the right
+                # if (image.height - top crop) > coord[3], crop on the bottom
+
+                # place image at x,y.
+                # set display width and height
+
+                draw_text_box = Element(ns('draw:text-box'))
+                draw_text_box.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
+                draw_frame.append(draw_text_box)
+
+
 
         elif item.name == "TextContent":
             textxml = (list(item.dm.children)[0])
 
             textsoup = BeautifulSoup(textxml, "lxml-xml")
+            
+            draw_text_box = Element(ns('draw:text-box'))
+            draw_text_box.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
+            draw_frame.append(draw_text_box)
 
             for object_ in textsoup.java.contents:
                 if object_ != "\n" and object_.name == "object":
                     text_data = javaxml_to_python(object_)
                     print(text_data)
 
+            paragraph = Element(ns('text:p'))
+            paragraph.text='hi'
+            draw_text_box.append(paragraph)
 
-
+        
+    #break
             
+
+doc.save()
+
+
 
