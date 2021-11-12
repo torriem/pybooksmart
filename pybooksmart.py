@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from xml.sax import saxutils
 import ezodf
 
+import os
 import sys
 import PIL.Image
 from ezodf.const import ALL_NSMAP
@@ -132,6 +133,8 @@ def javaxml_to_python(object_):
 
 
 bsf = open(sys.argv[1],"r") #assume utf-8
+library_path = os.path.dirname(os.path.abspath(sys.argv[1])) + '/library'
+
 
 soup = BeautifulSoup(bsf.read(),"lxml-xml")
 
@@ -285,10 +288,10 @@ for pageno, page in enumerate(pagesList):
                 booksmart_image=item["content"]
                 if booksmart_image[:8] != 'booklogo':
 
-                    img = PIL.Image.open('library/%s.original' % booksmart_image)
+                    img = PIL.Image.open('%s/%s.original' % (library_path,booksmart_image))
                     
                     a = ImageObject('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
-                                    'library/%s.original' % booksmart_image)
+                                    '%s/%s.original' % (library_path,booksmart_image))
 
                     doc.filemanager.register('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
                                              a, 'image/%s' % (img.format.lower()))
