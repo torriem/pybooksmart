@@ -10,9 +10,19 @@ from lxml.etree import QName, Element
 
 #from imagefile import ImageObject
 
+ALIGNMENT = { 1: 'center',
+              2: 'end',
+              0: 'start',
+              3: 'justify'}
+
+
 def ns(combined_name):
     prefix,name = combined_name.split(':')
     return "{%s}%s" % (ALL_NSMAP[prefix], name)
+
+def split_list( list_ ):
+    for x in range(0, len(list_), 2):
+        yield (list_[x], list_[x+1])
 
 class ImageObject(ezodf.filemanager.FileObject):
 
@@ -128,8 +138,69 @@ def javaxml_to_python(object_):
 
 
     return current_object
-                            
 
+
+last_paragraph_style = 0
+                            
+def make_paragraph_style(odfdoc, style_dict, alignment=0):
+    global last_paragraph_style
+
+    print (style_dict)
+
+    last_paragraph_style += 1
+    style_style = Element(ns('style:style'))
+    style_style.attrib[ns('style:family')] = 'paragraph'
+    style_style.attrib[ns('style:parent-style-name')] = 'Frame_20_contents'
+    style_style.attrib[ns('style:name')] = 'P%d' % last_paragraph_style
+
+    odfdoc.content.automatic_styles.xmlnode.append(style_style);
+    
+    style_paragraph_properties = Element(ns('style:paragraph-properties'))
+    style_paragraph_properties.attrib[ns('fo:text-align')]=ALIGNMENT[alignment]
+    style_paragraph_properties.attrib[ns('style:justify-single-word')]='false'
+
+    style_style.append(style_paragraph_properties)
+
+    style_text_properties = Element(ns('style:text-properties'))
+    if 'family' in style_dict:
+        style_text_properties.attrib[ns('style:font-name')] = style_dict['family']
+    if 'size' in style_dict:
+        style_text_properties.attrib[ns('fo:font-size')] = '%d' % style_dict['size']
+    if 'bold' in style_dict and style_dict['bold'] == 'true':
+        style_text_properties.attrib[ns('fo:font-weight')] = 'bold'
+        
+
+    style_style.append(style_text_properties)
+
+    return 'P%d' % last_paragraph_style
+
+last_span_style = 0
+
+def make_span_style(odfdoc, style_dict):
+    global last_span_style
+
+    print (style_dict)
+
+    last_span_style += 1
+    style_style = Element(ns('style:style'))
+    style_style.attrib[ns('style:family')] = 'text'
+    style_style.attrib[ns('style:name')] = 'T%d' % last_span_style
+
+    odfdoc.content.automatic_styles.xmlnode.append(style_style);
+    
+    style_text_properties = Element(ns('style:text-properties'))
+    
+    if 'family' in style_dict:
+        style_text_properties.attrib[ns('style:font-name')] = style_dict['family']
+    if 'size' in style_dict:
+        style_text_properties.attrib[ns('fo:font-size')] = '%d' % style_dict['size']
+    if 'bold' in style_dict and style_dict['bold'] == 'true':
+        style_text_properties.attrib[ns('fo:font-weight')] = 'bold'
+ 
+
+    style_style.append(style_text_properties)
+
+    return 'T%d' % last_span_style
 
 
 bsf = open(sys.argv[1],"r") #assume utf-8
@@ -240,6 +311,8 @@ for pageno, page in enumerate(pagesList):
     print ("Processing page %d (%s):" % (pageno,page))
     if pageno > 0:
         # insert a page break
+        #TODO: parse the /Book/bookObjects/Page for this page to
+        #set the page number with a pagebreak style to 1.
         
         # Add a new page break paragraph to the body
         paragraph = Element(ns('text:p'))
@@ -247,10 +320,10 @@ for pageno, page in enumerate(pagesList):
 
         doc.body.xmlnode.append(paragraph)
          
-    paragraph = Element(ns('text:p'))
-    paragraph.text='Page %d' % pageno
+    #paragraph = Element(ns('text:p'))
+    #paragraph.text='Page %d' % pageno
 
-    doc.body.xmlnode.append(paragraph)
+    #doc.body.xmlnode.append(paragraph)
 
 
     page_info = soup.find("Page", id=page)
@@ -295,7 +368,7 @@ for pageno, page in enumerate(pagesList):
 
                     doc.filemanager.register('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
                                              a, 'image/%s' % (img.format.lower()))
-                    print ("%s.original" % item["content"])
+                    #print ("%s.original" % item["content"])
 
                     transformations = item.find_all("TransformEffect")
                     x = int(transformations[0]['x'])
@@ -305,7 +378,7 @@ for pageno, page in enumerate(pagesList):
                     img_aspect = img.size[0] / img.size[1]
                     box_aspect = coord[2] / coord[3]
 
-                    print (transformations)
+                    #print (transformations)
 
                     # calculate pix per point at 100% scale (smallest side scaled to box)
                     # Booksmart transformation numbers are all in points based on the
@@ -436,14 +509,54 @@ for pageno, page in enumerate(pagesList):
             for object_ in textsoup.java.contents:
                 if object_ != "\n" and object_.name == "object":
                     text_data = javaxml_to_python(object_)
-                    print(text_data)
+                    print (text_data)
 
-            paragraph = Element(ns('text:p'))
-            paragraph.text='hi'
-            draw_text_box.append(paragraph)
+                    
+                    style_dict = {}
+                    display_pageno = False
+                    for item in text_data:
+                        if isinstance(item, dict):
+                            style_dict = item
+                            paragraph = Element(ns('text:p'))
+                            paragraph.attrib[ns('text:style-name')] = make_paragraph_style(doc,style_dict,style_dict.get('Alignment',0))
+                            draw_text_box.append(paragraph)
+
+
+                            continue
+
+                       
+
+                        for (span,text) in split_list(item):
+                            print (span)
+                            print (text)
+                            if span:
+                                style =  (make_span_style(doc, span))
+
+                                if text.strip() and 'bsVar' in span and span['bsVar'] == '$PageNumber':
+                                    print ('display pageno!')
+                                    span = Element(ns('text:page-number'))
+                                    span.attrib[ns('text:select-page')] = 'current'
+                                    display_pageno = False
+                                else:
+                                    span = Element(ns('text:span'))
+                                    span.attrib[ns('text:style-name')] = style
+
+                                span.text = text
+
+                                paragraph.append(span)
+
+
+                    """
+                    if text_data[0]['resolver'][:6] == 'Header':
+                        alignment = text_data[0].get('Alignment',0)
+                        for chunk in text_data[1]:
+                            print (chunk)
+                            print (make_paragraph_style(doc, chunk[0], alignment))
+                    """
+
 
         
-    #if pageno ==8: break
+    if pageno ==20: break
             
 
 doc.save()
