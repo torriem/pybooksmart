@@ -3,7 +3,7 @@ from xml.sax import saxutils
 import ezodf
 
 import sys
-
+import PIL.Image
 from ezodf.const import ALL_NSMAP
 from lxml.etree import QName, Element
 
@@ -176,7 +176,7 @@ style_graphic_properties.attrib[ns('fo:margin-bottom')] = '0.0791in'
 style_graphic_properties.attrib[ns('style:wrap')] = 'parallel'
 style_graphic_properties.attrib[ns('style:number-wrapped-paragraphs')] = 'no-limit'
 style_graphic_properties.attrib[ns('style:wrap-contour')] = 'false'
-style_graphic_properties.attrib[ns('style:vertical-pos')] = 'center'
+style_graphic_properties.attrib[ns('style:vertical-pos')] = 'middle'
 style_graphic_properties.attrib[ns('style:vertical-rel')] = 'paragraph-content'
 style_graphic_properties.attrib[ns('style:horizontal-pos')] = 'center'
 style_graphic_properties.attrib[ns('style:horizontal-rel')] = 'paragraph-content'
@@ -261,23 +261,21 @@ for pageno, page in enumerate(pagesList):
         # get x,y, width, height coords
         coord = [int(x) for x in item['re'].split(',')]
 
-        print (coord)
-        print ([x / 72.0 for x in coord])
+        print ("box coords in pts are: ", coord)
+        #print ([x / 72.0 for x in coord])
 
-
+        #outer frame for either text or graphics, can have a border
         draw_frame = Element(ns('draw:frame'))
         draw_frame.attrib[ns('draw:name')] = 'Frame%d' % (frame_count)
         draw_frame.attrib[ns('draw:style-name')] = 'blurbboxstyle'
         draw_frame.attrib[ns('svg:width')] = '%dpt' % coord[2]
-        #draw_frame.attrib[ns('svg:height')] = '%dpt' % coord[3]
+        draw_frame.attrib[ns('svg:height')] = '%dpt' % coord[3]
         draw_frame.attrib[ns('svg:x')] = '%dpt' % coord[0]
         draw_frame.attrib[ns('svg:y')] = '%dpt' % coord[1]
         draw_frame.attrib[ns('text:anchor-type')] = 'page'
         draw_frame.attrib[ns('text:anchor-page-number')] = '%d' % (pageno + 1)
         draw_frame.attrib[ns('draw:z-index')] = '%d' % (page_item_count+1)
         doc.body.xmlnode.insert(2,draw_frame)
-
-
 
         page_item_count += 1
         frame_count +=1
@@ -286,31 +284,141 @@ for pageno, page in enumerate(pagesList):
             if (item.has_attr("content")):
                 booksmart_image=item["content"]
                 if booksmart_image[:8] != 'booklogo':
-                    a = ImageObject('Pictures/%s.jpg' % booksmart_image, 
+
+                    img = PIL.Image.open('library/%s.original' % booksmart_image)
+                    
+                    a = ImageObject('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
                                     'library/%s.original' % booksmart_image)
 
-                    doc.filemanager.directory[booksmart_image] = a
-                print ("%s.original" % item["content"])
+                    doc.filemanager.register('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
+                                             a, 'image/%s' % (img.format.lower()))
+                    print ("%s.original" % item["content"])
 
-                transformations = item.find_all("TransformEffect")
-                x = int(transformations[0]['x'])
-                y = int(transformations[0]['y'])
-                zoom = int(transformations[0]['zoom'])
+                    transformations = item.find_all("TransformEffect")
+                    x = int(transformations[0]['x'])
+                    y = int(transformations[0]['y'])
+                    zoom = float(transformations[0]['zoom']) / 100.0
 
-                # enlarge image dimensions by zoom.
+                    img_aspect = img.size[0] / img.size[1]
+                    box_aspect = coord[2] / coord[3]
 
-                # if x is negative, crop on the left, set x to 0
-                # if y is negative, crop on the top, set y to 0
-                # if (image.width - left crop) > coord[2], crop on the right
-                # if (image.height - top crop) > coord[3], crop on the bottom
+                    print (transformations)
 
-                # place image at x,y.
-                # set display width and height
+                    # calculate pix per point at 100% scale (smallest side scaled to box)
+                    # Booksmart transformation numbers are all in points based on the
+                    # box size, so we have to figure out what that means in pixels so we
+                    # can compute the necessary clipping box in pixels.
 
-                draw_text_box = Element(ns('draw:text-box'))
-                draw_text_box.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
-                draw_frame.append(draw_text_box)
+                    if img_aspect >= 1 and box_aspect >= 1:
+                        # aspects both >= 1
 
+                        if box_aspect < img_aspect:
+                            # case 1, box aspect < image aspect: scale image y
+                            pixperpt = img.size[1] / coord[3]
+                        else:
+                            # case 2, box aspect > image aspect: scale image x
+                            pixperpt = img.size[0] / coord[2]
+                    elif img_aspect < 1 and box_aspect < 1:
+                        # aspects both < 1
+                        if box_aspect > img_aspect:
+                            # case 1, box aspect > image aspect: scale image x
+                            pixperpt = img.size[0] / coord[2]
+                        else:
+                            # case 2, box aspect < image aspect: scale image y
+                            pixperpt = img.size[1] / coord[3]
+                    elif box_aspect >=1 and img_aspect <1:
+                            # box aspect >= 1, image aspect < 1: scale image x
+                            pixperpt = img.size[0] / coord[2]
+                    else:
+                            # box aspect < 1, image aspect >= 1: scale image y
+                            pixperpt = img.size[1] / coord[3]
+
+                    # calculate how much of the image will be shown as a percentage
+                    clip_pixperpt = pixperpt / zoom
+
+                    # enlarge image dimensions by zoom.
+                    width = img.size[0] / clip_pixperpt #width in points
+                    height = img.size[1] / clip_pixperpt #height in points
+                    crop_left = 0
+                    crop_right = 0
+                    crop_top = 0
+                    crop_bottom = 0
+                    
+                    # if x is negative, crop on the left, set x to 0
+                    if x < 0:
+                        crop_left = int(abs(x) * clip_pixperpt) #in pixels
+                        width += x # remove left crop from width
+                        x = 0
+                    
+                    # if y is negative, crop on the top, set y to 0
+                    if y < 0:
+                        crop_top = int(abs(y) * clip_pixperpt)
+                        height += y # remove top crop from height
+                        y = 0
+
+                    if (width + x) > coord[2]: 
+                        # if image sticks beyond the right side of the frame
+                        # crop it from the right
+                        crop_right = width + x - coord[2]
+                        width -= crop_right
+                        crop_right = int(crop_right * clip_pixperpt)
+
+                    if (height + y ) > coord[3]:
+                        # if image sticks beyond the bottom of the frame,
+                        # crop it from the bottom.
+                        crop_bottom = height + y - coord[3]
+                        height -= crop_bottom
+                        crop_bottom = int(crop_bottom * clip_pixperpt)
+
+                    # style to set up the image crop
+                    style_style = Element(ns('style:style'))
+                    style_style.attrib[ns('style:name')] = 'imageframe%d' % frame_count
+                    style_style.attrib[ns('style:family')] = 'graphic'
+                    style_style.attrib[ns('style:parent-style-name')] = 'Graphics'
+                    doc.content.automatic_styles.xmlnode.append(style_style)
+
+                    style_graphic_properties = Element(ns('style:graphic-properties'))
+                    style_graphic_properties.attrib[ns('style:mirror')] = 'none'
+                    style_graphic_properties.attrib[ns('fo:clip')] = 'rect(%dpx, %dpx, %dpx, %dpx)' % (crop_top, crop_right, crop_bottom, crop_left)
+                    style_graphic_properties.attrib[ns('draw:luminance')] = '0%'
+                    style_graphic_properties.attrib[ns('draw:contrast')] = '0%'
+                    style_graphic_properties.attrib[ns('draw:red')] = '0%'
+                    style_graphic_properties.attrib[ns('draw:green')] = '0%'
+                    style_graphic_properties.attrib[ns('draw:blue')] = '0%'
+                    style_graphic_properties.attrib[ns('draw:gamma')] = '100%'
+                    style_graphic_properties.attrib[ns('draw:color-inversion')] = 'false'
+                    style_graphic_properties.attrib[ns('draw:image-opacity')] = '100%'
+                    style_graphic_properties.attrib[ns('draw:color-mode')] = 'standard'
+                    style_style.append(style_graphic_properties)
+
+                    # place image at x,y, set display width and height
+                    # sub-frame around graphic so we can position image properly within the
+                    # frame. This is to emulate the way Booksmart allows placing of images,
+                    # zooming, panning, etc
+                    draw_text_subbox = Element(ns('draw:text-box'))
+                    draw_text_subbox.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
+                    draw_frame.append(draw_text_subbox)
+
+
+                    draw_subframe = Element(ns('draw:frame'))
+                    draw_subframe.attrib[ns('draw:name')] = 'ImageFrame%d' % (frame_count)
+                    draw_subframe.attrib[ns('draw:style-name')] = 'imageframe%d' % frame_count
+                    draw_subframe.attrib[ns('svg:width')] = '%dpt' % width
+                    draw_subframe.attrib[ns('svg:height')] = '%dpt' % height
+                    draw_subframe.attrib[ns('svg:x')] = '%dpt' % x
+                    draw_subframe.attrib[ns('svg:y')] = '%dpt' % y
+                    draw_subframe.attrib[ns('text:anchor-type')] = 'frame'
+
+                    draw_text_subbox.append(draw_subframe)
+
+                    draw_image = Element(ns('draw:image'))
+                    draw_image.attrib[ns('xlink:href')] = "Pictures/%s.%s" % (booksmart_image, img.format.lower())
+                    draw_image.attrib[ns('xlink:type')] = 'simple'
+                    draw_image.attrib[ns('xlink:show')] = 'embed'
+                    draw_image.attrib[ns('xlink:actuate')] = 'onLoad'
+                    #draw_image.attrib[ns('loext:mime-type')] = 'image/%s' % (img.format.lower())
+
+                    draw_subframe.append(draw_image)
 
 
         elif item.name == "TextContent":
@@ -332,7 +440,7 @@ for pageno, page in enumerate(pagesList):
             draw_text_box.append(paragraph)
 
         
-    #break
+    #if pageno ==8: break
             
 
 doc.save()
