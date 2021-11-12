@@ -160,11 +160,17 @@ def make_paragraph_style(odfdoc, style_dict, alignment=0):
     style_style.append(style_paragraph_properties)
 
     style_text_properties = Element(ns('style:text-properties'))
+    if 'font' in style_dict:
+        style_text_properties.attrib[ns('style:font-name')] = style_dict['font']
+        make_font_decl(odfdoc, style_dict['font'])
     if 'family' in style_dict:
         style_text_properties.attrib[ns('style:font-name')] = style_dict['family']
         make_font_decl(odfdoc, style_dict['family'])
     if 'size' in style_dict:
-        style_text_properties.attrib[ns('fo:font-size')] = '%d' % style_dict['size']
+        if isinstance(style_dict['size'],str):
+            style_text_properties.attrib[ns('fo:font-size')] = '%s' % style_dict['size']
+        else:
+            style_text_properties.attrib[ns('fo:font-size')] = '%d' % style_dict['size']
     if 'bold' in style_dict and style_dict['bold'] == 'true':
         style_text_properties.attrib[ns('fo:font-weight')] = 'bold'
         
@@ -307,6 +313,7 @@ style_style = Element(ns('style:style'))
 style_style.attrib[ns('style:family')] = 'paragraph'
 style_style.attrib[ns('style:name')] = 'BlurbPageBreakResetNum'
 style_style.attrib[ns('style:parent-style-name')] = 'Standard'
+style_style.attrib[ns('style:master-page-name')] = 'Standard'
 
 style_paragraph_properties = Element(ns('style:paragraph-properties'))
 style_paragraph_properties.attrib[ns('fo:break-before')] = 'page'
@@ -323,7 +330,7 @@ style_style.attrib[ns('style:name')] = 'blurbboxstyle'
 style_style.attrib[ns('style:parent-style-name')] = 'Frame'
 
 graphic_properties = Element(ns('style:graphic-properties'))
-#graphic_properties.attrib[ns('fo:border')] = '1pt solid #000000'
+graphic_properties.attrib[ns('fo:border')] = 'none'
 graphic_properties.attrib[ns('fo:margin-bottom')] = '0in'
 #graphic_properties.attrib[ns('fo:margin-top')] = '0in'
 #graphic_properties.attrib[ns('fo:margin-left')] = '0in'
@@ -355,10 +362,9 @@ for pageno, page in enumerate(pagesList):
         paragraph = Element(ns('text:p'))
         if 'pagination' in page_info.attrs and page_info.attrs['pagination'] == 'START_PAGE_NUMBERS':
             paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreakResetNum'
-            paragraph.text = 'back to page 1'
         else:
             paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreak1'
-            paragraph.text = 'hi'
+            paragraph.text = ''
 
         doc.body.xmlnode.append(paragraph)
          
@@ -374,7 +380,7 @@ for pageno, page in enumerate(pagesList):
         # get x,y, width, height coords
         coord = [int(x) for x in item['re'].split(',')]
 
-        print ("box coords in pts are: ", coord)
+        #print ("box coords in pts are: ", coord)
         #print ([x / 72.0 for x in coord])
 
         #outer frame for either text or graphics, can have a border
@@ -541,11 +547,10 @@ for pageno, page in enumerate(pagesList):
                 variable = item['dc']
 
             container_style = {}
-            if 'font' in item.attrs:
-                container_style['family'] = item.attrs['font']
-
-            if 'size' in item.attrs:
-                container_style['size'] = item.attrs['size']
+            if 'ts' in item.attrs:
+                textstyledef = soup.find('TextStyleDefinition',id=item.attrs['ts'])
+                if textstyledef:
+                    container_style = textstyledef.attrs
 
             #TODO font color too
 
@@ -562,29 +567,46 @@ for pageno, page in enumerate(pagesList):
                     text_data = javaxml_to_python(object_)
                     
                     style_dict = {}
+
                     display_pageno = False
                     for item in text_data:
                         if isinstance(item, dict):
-                            print ('starting new paragraph')
-                            style_dict = item
+                            style_dict = {}
+                            
+                            # bring in container defaults
+                            for key in container_style:
+                                style_dict[key] = container_style[key]
+                            # override with resolver style
+
+                            if item['resolver']:
+                                textstyledef = soup.find('TextStyleDefinition',id=item['resolver'].split('.')[0])
+                                if textstyledef:
+                                    for key in textstyledef.attrs:
+                                        style_dict[key] = textstyledef.attrs[key]
+
+                            for key in item:
+                                # override anything specified along with the resolver?
+                                style_dict[key] = item[key]
+                                
+
                             paragraph = Element(ns('text:p'))
-                            paragraph.attrib[ns('text:style-name')] = make_paragraph_style(doc,style_dict,style_dict.get('Alignment',0))
+
+                            alignment = style_dict.get('align',0)
+                            alignment = style_dict.get('Alignment',alignment)
+                            alignment = int(alignment)
+                            
+                            paragraph.attrib[ns('text:style-name')] = make_paragraph_style(doc,style_dict,alignment)
                             draw_text_box.append(paragraph)
                             continue
 
-                        if not style_dict:
-                            # sometimes we just use the $ContainerDefault instead of a special
-                            # style dict, so go ahead and start a new paragraph with this as a
-                            # a style
-                            style_dict = container_style
-                            paragraph.attrib[ns('text:style-name')] = make_paragraph_style(doc,style_dict,style_dict.get('Alignment',0))
-                            draw_text_box.append(paragraph)
-
-
-                        for (span,text) in split_list(item):
-                            print (span, text)
-                            if span:
+                        generator_wrapper = (i for i in item)
+                        for part in generator_wrapper:
+                            if isinstance(part, dict):
+                                span = part #override again with span-specific formatting
+                                text = next(generator_wrapper)
                                 style =  (make_span_style(doc, span))
+
+                                print (text)
 
                                 span = Element(ns('text:span'))
 
@@ -604,12 +626,14 @@ for pageno, page in enumerate(pagesList):
 
                                 paragraph.append(span)
                             else:
-                                paragraph.text = text
+                                if part and part.strip():
+                                    paragraph.text = part
 
         
-    if pageno ==20: break
+    #if pageno ==20: break
             
 
+print ('Saving document with pictures.  May take a while...')
 doc.save()
 
 
