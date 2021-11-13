@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 from xml.sax import saxutils
 import ezodf
+import tempfile
 
 import os
 import sys
@@ -112,7 +113,8 @@ def javaxml_to_python(object_):
 
     elif object_["class"] == "java.awt.Color":
         current_object = {}
-        current_object["color_id"] = object_['id']
+        if 'id' in object_.attrs:
+            current_object["color_id"] = object_['id']
 
         red = None
         green = None
@@ -122,16 +124,16 @@ def javaxml_to_python(object_):
         for i in object_.contents:
             if i == '\n': continue
 
-            if not red:
+            if red is None:
                 red = int(i.contents[0])
-            if not green:
+            elif green is None:
                 green = int(i.contents[0])
-            if not blue:
+            elif blue is None:
                 blue = int(i.contents[0])
-            if not alpha:
+            elif alpha is None:
                 alpha = int(i.contents[0])
-
-        current_object['color'] = (red, green, blue, alpha)
+    
+        current_object['color'] = (red, green, blue, alpha) 
     else:
         print ("Unknown object: ", _object["class"])
         raise javaxml_exception("unimplemented object class %s" % _object["class"])
@@ -180,9 +182,11 @@ def make_paragraph_style(odfdoc, style_dict, alignment=0):
     return 'P%d' % last_paragraph_style
 
 last_span_style = 0
+color_cache = {}
 
 def make_span_style(odfdoc, style_dict):
     global last_span_style
+    global color_cache
 
     last_span_style += 1
     style_style = Element(ns('style:style'))
@@ -200,6 +204,20 @@ def make_span_style(odfdoc, style_dict):
         style_text_properties.attrib[ns('fo:font-size')] = '%d' % style_dict['size']
     if 'bold' in style_dict and style_dict['bold'] == 'true':
         style_text_properties.attrib[ns('fo:font-weight')] = 'bold'
+    if 'foreground' in style_dict:
+
+        if isinstance(style_dict['foreground'], str):
+            color = color_cache[style_dict['foreground']]
+        else:
+            color = style_dict['foreground']['color']
+
+            if 'color_id' in style_dict['foreground']:
+                #print ('cache color_id ', style_dict['foreground']['color_id'])
+                #print ('caching ', color)
+                color_cache[style_dict['foreground']['color_id']] = color
+
+        colorhex = "#%02x%02x%02x" % (color[0], color[1], color[2])
+        style_text_properties.attrib[ns('fo:color')] = colorhex
  
 
     style_style.append(style_text_properties)
@@ -348,9 +366,11 @@ doc.content.automatic_styles.xmlnode.append(style_style)
 
 
 frame_count=1
+
+#pagesList = [ pagesList[4], pagesList[5] ]
 for pageno, page in enumerate(pagesList):
     page_item_count=0
-    print ("Processing page %d (%s):" % (pageno,page))
+    print ("Processing page %d (%s):" % (pageno+1,page))
     page_info = soup.find("Page", id=page)
 
     if pageno > 0:
@@ -405,13 +425,30 @@ for pageno, page in enumerate(pagesList):
                 if booksmart_image[:8] != 'booklogo':
 
                     img = PIL.Image.open('%s/%s.original' % (library_path,booksmart_image))
-                    
-                    a = ImageObject('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
-                                    '%s/%s.original' % (library_path,booksmart_image))
+
+                    try:
+                        dpi = img.info['dpi']
+                    except KeyError as e:
+                        dpi = (0,0)
+
+                    # LibreOffice doesn't seem to recognize odd DPI sizes like 180.  It defaults to 96
+                    # which messes up the cropping. Hence we will re-label any oddball image to be 300 dpi,
+                    # without changing the original.  
+                    # TODO: clean up the temporary files. Maybe use a temporary folder that we can remove
+
+                    if dpi[0] != 300 and dpi[0] != 600:
+                        dpi = (300,300)
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.%s' % img.format.lower())
+                        temp_filename = temp_file.name
+                        img.save(temp_filename, dpi=(300, 300)) # create a copy that's labeled as 300 dpi
+                        a = ImageObject('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
+                                        '%s' % (temp_filename))
+                    else:
+                        a = ImageObject('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
+                                        '%s/%s.original' % (library_path,booksmart_image))
 
                     doc.filemanager.register('Pictures/%s.%s' % (booksmart_image, img.format.lower()),
                                              a, 'image/%s' % (img.format.lower()))
-                    #print ("%s.original" % item["content"])
 
                     transformations = item.find_all("TransformEffect")
                     x = int(transformations[0]['x'])
@@ -420,8 +457,6 @@ for pageno, page in enumerate(pagesList):
 
                     img_aspect = img.size[0] / img.size[1]
                     box_aspect = coord[2] / coord[3]
-
-                    #print (transformations)
 
                     # calculate pix per point at 100% scale (smallest side scaled to box)
                     # Booksmart transformation numbers are all in points based on the
@@ -462,6 +497,8 @@ for pageno, page in enumerate(pagesList):
                     crop_right = 0
                     crop_top = 0
                     crop_bottom = 0
+
+                    #print ('pic size in pts: ', width,height)
                     
                     # if x is negative, crop on the left, set x to 0
                     if x < 0:
@@ -481,6 +518,8 @@ for pageno, page in enumerate(pagesList):
                         crop_right = width + x - coord[2]
                         width -= crop_right
                         crop_right = int(crop_right * clip_pixperpt)
+                        #print ('cropping right ', crop_right)
+
 
                     if (height + y ) > coord[3]:
                         # if image sticks beyond the bottom of the frame,
@@ -488,6 +527,7 @@ for pageno, page in enumerate(pagesList):
                         crop_bottom = height + y - coord[3]
                         height -= crop_bottom
                         crop_bottom = int(crop_bottom * clip_pixperpt)
+
 
                     # style to set up the image crop
                     style_style = Element(ns('style:style'))
@@ -498,7 +538,17 @@ for pageno, page in enumerate(pagesList):
 
                     style_graphic_properties = Element(ns('style:graphic-properties'))
                     style_graphic_properties.attrib[ns('style:mirror')] = 'none'
-                    style_graphic_properties.attrib[ns('fo:clip')] = 'rect(%dpx, %dpx, %dpx, %dpx)' % (crop_top, crop_right, crop_bottom, crop_left)
+                    #style_graphic_properties.attrib[ns('fo:clip')] = 'rect(%dpx, %dpx, %dpx, %dpx)' % (crop_top, crop_right, crop_bottom, crop_left)
+                    #print ('cropping rect(%fin, %fin, %fin, %fin)' % (crop_top / dpi[1], 
+                    #                                           crop_right / dpi[0], 
+                    #                                           crop_bottom / dpi[1], 
+                    #                                           crop_left / dpi[1]) )
+
+                    style_graphic_properties.attrib[ns('fo:clip')] = \
+                             'rect(%fin, %fin, %fin, %fin)' % (crop_top / dpi[1], 
+                                                               crop_right / dpi[0], 
+                                                               crop_bottom / dpi[1], 
+                                                               crop_left / dpi[1])
                     style_graphic_properties.attrib[ns('draw:luminance')] = '0%'
                     style_graphic_properties.attrib[ns('draw:contrast')] = '0%'
                     style_graphic_properties.attrib[ns('draw:red')] = '0%'
@@ -515,7 +565,7 @@ for pageno, page in enumerate(pagesList):
                     # frame. This is to emulate the way Booksmart allows placing of images,
                     # zooming, panning, etc
                     draw_text_subbox = Element(ns('draw:text-box'))
-                    draw_text_subbox.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
+                    draw_text_subbox.attrib[ns('fo:max-height')] = '%dpt' % coord[3]
                     draw_frame.append(draw_text_subbox)
 
 
@@ -552,6 +602,13 @@ for pageno, page in enumerate(pagesList):
                 if textstyledef:
                     container_style = textstyledef.attrs
 
+            if 'va' in item.attrs:
+                # vertical text alignment in box
+                # TODO.  Not sure how to do this
+
+                if item.attrs['va'] == '3': # center vertically
+                    pass
+
             #TODO font color too
 
             textxml = (list(item.dm.children)[0])
@@ -559,7 +616,7 @@ for pageno, page in enumerate(pagesList):
             textsoup = BeautifulSoup(textxml, "lxml-xml")
             
             draw_text_box = Element(ns('draw:text-box'))
-            draw_text_box.attrib[ns('fo:min-height')] = '%dpt' % coord[3]
+            draw_text_box.attrib[ns('fo:max-height')] = '%dpt' % coord[3]
             draw_frame.append(draw_text_box)
 
             for object_ in textsoup.java.contents:
