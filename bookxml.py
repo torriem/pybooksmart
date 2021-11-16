@@ -2,19 +2,64 @@ import lxml.etree
 import pprint
 
 class TextBox(object):
-    pass
+    def __init__(self, xmlre = None):
+        if xmlre:
+            self.x, self.y, self.width, self.height = [ int(i) for i in xmlre.split(',') ]
+        else:
+            self.x = 0
+            self.y = 0
+            self.width = 0
+            self.height = 0
+
+        self.paragraphs = []
+
+    def __repr__(self):
+        return ('TextBox(%d,%d,%d,%d,%s)' % (self.x, self.y, self.width, self.height, repr(self.paragraphs)))
+
+    def __str__(self):
+        return repr(self)
 
 class ImageBox(object):
     pass
 
 class ParagraphStyle(object):
-    def __init__(self, style_dict):
-        self.font      = style_dict['font']
-        self.size      = style_dict['size']
-        self.color     = style_dict['color']
-        self.alignment = style_dict['align']
-        self.bold      = style_dict['bold']
-        self.italic    = style_dict['italic']
+    def __init__(self, style_dict = None):
+        self.name = None
+
+        if style_dict:
+            self.font      = style_dict['font']
+            self.size      = style_dict['size']
+            self.color     = style_dict['color']
+            self.alignment = style_dict['align']
+            self.bold      = style_dict['bold']
+            self.italic    = style_dict['italic']
+        else:
+            self.font      = None
+            self.size      = None
+            self.color     = None
+            self.alignment = None
+            self.bold      = None
+            self.italic    = None
+
+    def __str__(self):
+        return "name=%s, font=%s, size=%s, color=%s, alignment=%d, bold=%s, italic=%s" % (
+             self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic)
+
+    def __repr__(self):
+        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s}" % (
+                self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic)
+
+    def __setitem__(self, name, value):
+        if name in ['font', 'size', 'color', 'alignment', 'bold', 'italic']:
+            self.__dict__[name] = value
+        else:
+            raise KeyError
+
+    def __getitem__(self, name):
+        if name in ['font', 'size', 'color', 'alignment', 'bold', 'italic']:
+            return self.__dict__[name]
+        else:
+            raise KeyError
 
     def simple_serialize(self):
         s = '%s|%s|%s|%d|%s|%s' % (self.font,
@@ -27,18 +72,46 @@ class ParagraphStyle(object):
         return s
 
 class Paragraph(object):
-    pass
+    def __init__(self):
+        self.style = None # a string name referring to a style
+        self.spans = [] # list of Span objects
 
+    def __repr__(self):
+        return 'Paragraph(%s, %s)' % (self.style, repr(self.spans))
+
+    def __str__(self):
+        return repr(self)
+    
 class Span(object):
-    pass
+    def __init__(self):
+        self.style = None # string name of span style
+        self.text = None
+        self.variable = None
+
+    def __repr__(self):
+        return 'Span(%s, "%s", %s)' % (self.style, self.text, self.variable)
+
+    def __str(self):
+        return repr(self)
 
 class SpanStyle(object):
-    def __init__(self, style_dict):
-        self.font = style_dict.get('font', None)
-        self.size = style_dict.get('size', None)
-        self.color = style_dict.get('color', None)
-        self.bold = style_dict.get('bold', None)
-        self.italic = style_dict.get('italic', None)
+    def __init__(self, style_dict = None):
+        self.name = None
+
+        if style_dict:
+            self.font = style_dict.get('font', None)
+            self.size = style_dict.get('size', None)
+            self.color = style_dict.get('color', None)
+            self.bold = style_dict.get('bold', None)
+            self.italic = style_dict.get('italic', None)
+            #self.variable = style_dict.get('variable', None)
+        else:
+            self.font = None
+            self.size = None
+            self.color = None
+            self.bold = None
+            self.italic = None
+            #self.variable = None
 
     def simple_serialize(self):
         s = '%s|%s|%s|%s|%s' % (self.font,
@@ -48,6 +121,27 @@ class SpanStyle(object):
                                    self.italic)
 
         return s
+
+    def __str__(self):
+        return "name=%s, font=%s, size=%s, color=%s, bold=%s, italic=%s" % (
+             self.name, self.font, self.size, self.color, self.bold, self.italic)
+
+    def __repr__(self):
+        return "Span Style {name:%s, font:%s, size:%s, color:%s, bold:%s, italic:%s}" % (
+                self.name, self.font, self.size, self.color, self.bold, self.italic)
+
+    def __setitem__(self, name, value):
+        if name in ['font', 'size', 'color', 'bold', 'italic']:
+            self.__dict__[name] = value
+        else:
+            raise KeyError
+
+    def __getitem__(self, name):
+        if name in ['font', 'size', 'color', 'bold', 'italic']:
+            return self.__dict__[name]
+        else:
+            raise KeyError
+
 
 class javaxml_exception(Exception):
     pass
@@ -160,17 +254,21 @@ class BookXML(object):
         self.page_info = {}
         self.text_boxes = {}
         self.images = {}
-        self._styles = {}
+        self.paragraph_styles = []
+        self.span_styles = []
 
-        self._color_cache = {}
+        self._styles = {}  # BookSmart TextStyleDefinitions
+        self._color_cache = {} # BookSmart color definitions
         self._paragraph_style_cache = {}
+        self._pgs_no = 0
         self._span_style_cache = {}
+        self._ss_no = 0
 
         self.read_book_styles()
-
         self.read_pages()
         print(self._paragraph_style_cache)
         print(self._span_style_cache)
+        print(self.text_boxes)
 
         
 
@@ -201,9 +299,6 @@ class BookXML(object):
                         self._styles[sid][key] = True
                     else:
                         self._styles[sid][key] = False
-                   
-
-        print (self._styles)
 
     def read_pages(self):
         pagesList = self.book.find('pagesList')
@@ -217,6 +312,7 @@ class BookXML(object):
 
             self.text_boxes[id_] = []
             for tc in self.book_objects.findall("TextContent[@parentId='%s']" % id_):
+                text_box = TextBox(tc.attrib['re'])
 
                 base_style = {} # this will hold the default style going into the parsing
                 lookup_style = self._styles[tc.attrib['ts'].lower()]
@@ -225,10 +321,6 @@ class BookXML(object):
 
                 base_style['color'] = '#%s' % base_style['color'][-6:] # trim off alpha channel
 
-                textbox = {}
-                for key in tc.attrib:
-                    textbox[key] = tc.attrib[key]
-
                 #text is a serialized structure of java objects stored in the dm tag
                 #TODO put this in some kind of Python class structure so it's easier to
                 #process.  Probably we need paragraph and span objects
@@ -236,51 +328,58 @@ class BookXML(object):
                 dmobj = lxml.etree.fromstring(dmtext)[0] # get the first child of the java node
                 text_structure = javaxml_to_python(dmobj)
 
-                print ('id %s, base is ' % id_, base_style)
-                #pprint.pprint (text_structure)
-                print (len(text_structure))
 
                 pstyle = None
+                paragraph = None
+
                 for i in text_structure:
                     if isinstance(i, dict):
+                        # a pgraph style dict signifies the start of a new paragraph
+
                         if pstyle:
-                            print ('ending paragraph.\n')
+
                             # paragraph was open, close it now, append it to the
                             # list we're building.  If it was empty we can just
                             # throw it away.
-                            pass
 
-                        # a dict signifies the start of a new paragraph
+                            if len(paragraph.spans):
+                                if not pstyle.simple_serialize() in self._paragraph_style_cache:
+                                    pstyle.name = 'PS%d' % self._pgs_no
+                                    self._pgs_no += 1
 
-                        pstyle = base_style.copy()
+                                    self._paragraph_style_cache[pstyle.simple_serialize()] = pstyle
+                                else:
+                                    pstyle = self._paragraph_style_cache[pstyle.simple_serialize()]
+                                paragraph.style = pstyle.name
+
+                                text_box.paragraphs.append(paragraph)
+                                # append to list
+
+                        paragraph = Paragraph()
+                        pstyle = ParagraphStyle(base_style)
 
                         if 'resolver' in i:
                             # override our default style for this paragraph 
                             lookup_style = self._styles[i['resolver'].split('.')[0].lower()]
 
                             for key in lookup_style:
-                                if key != 'id':
+                                if key == 'align': pstyle['alignment'] = lookup_style[key]
+                                elif key != 'id':
                                     pstyle[key] = lookup_style[key]
 
                         if 'Alignment' in i:
                             pstyle['alignment'] = int(i['Alignment'])
 
-                        print ('starting new paragraph, style is ', pstyle)
-
-                        ps = ParagraphStyle(pstyle)
-                        if not ps.simple_serialize() in self._paragraph_style_cache:
-                            self._paragraph_style_cache[ps.simple_serialize()] = ps
-                        else:
-                            print ('paragraph style cached!')
-
                         continue
                     
                     spans_wrapper = (sp for sp in i) # list of items
-                    span_style = {}
+                    span_style = SpanStyle
+                    text_span = Span()
+
                     for span in spans_wrapper:
                         if isinstance(span, dict):
                             # style the span
-                            span_style = {}
+                            span_style = SpanStyle()
 
                             if 'size' in span:
                                 span_style['size'] = span['size']
@@ -316,29 +415,37 @@ class BookXML(object):
                                 span_style['italic'] = False
 
                             if 'bsVar' in span:
-                                span_style['variable'] = span['bsVar']
+                                text_span.variable = span['bsVar']
 
                             # now get the text that follows
                             span = next(spans_wrapper)
                         
                         if span and span.strip():
-                            ss = SpanStyle(span_style)
-                            if not ss.simple_serialize() in self._span_style_cache:
-                                self._span_style_cache[ss.simple_serialize()] = ss
-                            else:
-                                print ('span style cached.')
-                            print ('text span is: ', [span_style, span])
-                print ('Ending paragraph.\n')
 
+                            if not span_style.simple_serialize() in self._span_style_cache:
+                                span_style.name = 'SS%d' % self._ss_no
+                                self._ss_no += 1
+                                
+                                self._span_style_cache[span_style.simple_serialize()] = span_style
+                            else:
+                                span_style = self._span_style_cache[span_style.simple_serialize()]
+                            text_span.text = span
+                            text_span.style = span_style.name
+
+                            paragraph.spans.append( text_span )
                 # if the paragraph is empty, we should throw it away.
 
+                if len(paragraph.spans):
+                    if not pstyle.simple_serialize() in self._paragraph_style_cache:
+                        pstyle.name = 'PS%d' % self._pgs_no
+                        self._pgs_no += 1
+                        self._paragraph_style_cache[pstyle.simple_serialize()] = pstyle
+                    else:
+                        pstyle = self._paragraph_style_cache[pstyle.simple_serialize()]
 
-
-
-
-
-                textbox['text'] = text_structure
-                self.text_boxes[id_].append(textbox)
+                    paragraph.style = pstyle.name
+                    text_box.paragraphs.append(paragraph)
+                self.text_boxes[id_].append(text_box)
 
             self.images[id_] = []
             for ic in self.book_objects.findall("ImageContent[@parentId='%s']" % id_):
