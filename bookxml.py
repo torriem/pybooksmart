@@ -20,9 +20,13 @@ class TextBox(object):
         return repr(self)
 
 class ImageBox(object):
-    pass
+
+    def get_crop_info(self, dpi):
+        pass
 
 class ParagraphStyle(object):
+    keys = ['font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
+
     def __init__(self, style_dict = None):
         self.name = None
 
@@ -33,6 +37,9 @@ class ParagraphStyle(object):
             self.alignment = style_dict['align']
             self.bold      = style_dict['bold']
             self.italic    = style_dict['italic']
+            self.italic    = style_dict['underlined']
+            self.line_spacing = style_dict.get('line_spacing',0.0)
+            self.left_indent = style_dict.get('left_indent',0.0)
         else:
             self.font      = None
             self.size      = None
@@ -40,34 +47,42 @@ class ParagraphStyle(object):
             self.alignment = None
             self.bold      = None
             self.italic    = None
+            self.underlined    = None
+            self.line_spacing = 0.0
+            self.left_indent = 0.0
 
     def __str__(self):
-        return "name=%s, font=%s, size=%s, color=%s, alignment=%d, bold=%s, italic=%s" % (
-             self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic)
+        return "name=%s, font=%s, size=%s, color=%s, alignment=%d, bold=%s, italic=%s, underlined=%s, line_spacing=%f, left_indet=%f" % (
+             self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underlined,
+             self.line_spacing, self.left_indent)
 
     def __repr__(self):
-        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s}" % (
-                self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic)
+        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s, underlined:%s, line_spacing=%f, left_indet=%f}" % (
+                self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underlined,
+                self.line_spacing, self.left_indent)
 
     def __setitem__(self, name, value):
-        if name in ['font', 'size', 'color', 'alignment', 'bold', 'italic']:
+        if name in ParagraphStyle.keys:
             self.__dict__[name] = value
         else:
             raise KeyError
 
     def __getitem__(self, name):
-        if name in ['font', 'size', 'color', 'alignment', 'bold', 'italic']:
+        if name in ParagraphStyle.keys:
             return self.__dict__[name]
         else:
             raise KeyError
 
     def simple_serialize(self):
-        s = '%s|%s|%s|%d|%s|%s' % (self.font,
-                                   self.size,
-                                   self.color,
-                                   self.alignment,
-                                   self.bold,
-                                   self.italic)
+        s = '%s|%s|%s|%d|%s|%s|%s|%f|%f' % (self.font,
+                                            self.size,
+                                            self.color,
+                                            self.alignment,
+                                            self.bold,
+                                            self.italic,
+                                            self.underlined,
+                                            self.line_spacing,
+                                            self.left_indent)
 
         return s
 
@@ -95,6 +110,8 @@ class Span(object):
         return repr(self)
 
 class SpanStyle(object):
+    keys = ['font', 'size', 'color', 'bold', 'italic', 'underlined']
+
     def __init__(self, style_dict = None):
         self.name = None
 
@@ -104,6 +121,7 @@ class SpanStyle(object):
             self.color = style_dict.get('color', None)
             self.bold = style_dict.get('bold', None)
             self.italic = style_dict.get('italic', None)
+            self.underlined = style_dict.get('underlined', None)
             #self.variable = style_dict.get('variable', None)
         else:
             self.font = None
@@ -111,33 +129,42 @@ class SpanStyle(object):
             self.color = None
             self.bold = None
             self.italic = None
+            self.underlined = None
             #self.variable = None
 
+    def __repr__(self):
+        return 'SpanStyle(font:%s, size:%s, color:%s, bold:%s, italic: %s)' % (
+              self.font, self.size, self.color, self.bold, self.italic)
+
+    def __str__(self):
+        return repr(self)
+
     def simple_serialize(self):
-        s = '%s|%s|%s|%s|%s' % (self.font,
+        s = '%s|%s|%s|%s|%s|%s' % (self.font,
                                    self.size,
                                    self.color,
                                    self.bold,
-                                   self.italic)
+                                   self.italic,
+                                   self.underlined)
 
         return s
 
     def __str__(self):
-        return "name=%s, font=%s, size=%s, color=%s, bold=%s, italic=%s" % (
-             self.name, self.font, self.size, self.color, self.bold, self.italic)
+        return "name=%s, font=%s, size=%s, color=%s, bold=%s, italic=%s, underlined=%s" % (
+             self.name, self.font, self.size, self.color, self.bold, self.italic, self.underlined)
 
     def __repr__(self):
-        return "Span Style {name:%s, font:%s, size:%s, color:%s, bold:%s, italic:%s}" % (
-                self.name, self.font, self.size, self.color, self.bold, self.italic)
+        return "Span Style {name:%s, font:%s, size:%s, color:%s, bold:%s, italic:%s, underlined:%s}" % (
+                self.name, self.font, self.size, self.color, self.bold, self.italic, self.underlined)
 
     def __setitem__(self, name, value):
-        if name in ['font', 'size', 'color', 'bold', 'italic']:
+        if name in SpanStyle.keys:
             self.__dict__[name] = value
         else:
             raise KeyError
 
     def __getitem__(self, name):
-        if name in ['font', 'size', 'color', 'bold', 'italic']:
+        if name in SpanStyle.keys:
             return self.__dict__[name]
         else:
             raise KeyError
@@ -166,12 +193,9 @@ def javaxml_to_python(object_):
                         #print ("added null")
                         current_object.append(None)
                     else:
-                        print ("we got: ",to_add.name)
-                        print (operation)
-                        raise javaxml_exception("unrecognized list item")
+                        raise javaxml_exception("unrecognized list item %s %s=>%s" % (operation['method'], to_add.tag, to_add.text))
             else:
-                print ("we see:", operation["method"])
-                raise javaxml_exception("unrecognized list operation")
+                raise javaxml_exception("unrecognized list operation %s" % operation['method'])
 
 
     elif object_.attrib["class"] == "java.util.HashMap":
@@ -203,16 +227,15 @@ def javaxml_to_python(object_):
                         current_object[key] = None
                     elif to_add.tag == "int":
                         current_object[key] = int(to_add.text)
+                    elif to_add.tag == 'float':
+                        current_object[key] = float(to_add.text)
                     elif to_add.tag == "boolean":
                         current_object[key] = to_add.text #TODO convert to real boolean
                     else:
-                        print ("we got: ",to_add.name)
-                        print (operation)
-                        raise javaxml_exception("unrecognized dict value")
+                        raise javaxml_exception("unrecognized dict value %s %s" % (to_add.tag, to_add.text) )
                     break # we only expect two xml elements in a hashmap, and we now have both
             else:
-                print ("we see:", operation["method"])
-                raise javaxml_exception("unrecognized dict operation")
+                raise javaxml_exception("unrecognized dict operation %s" % operation['method'])
 
     elif object_.attrib["class"] == "java.awt.Color":
         current_object = {}
@@ -236,7 +259,6 @@ def javaxml_to_python(object_):
     
         current_object['color'] = (red, green, blue, alpha) 
     else:
-        print ("Unknown object: ", _object["class"])
         raise javaxml_exception("unimplemented object class %s" % _object["class"])
 
 
@@ -291,7 +313,11 @@ class BookXML(object):
             sid = s.attrib['id'].lower()
             self._styles[sid] = { 'align': 0,
                                   'bold' : False,
-                                  'italic' : False }
+                                  'italic' : False,
+                                  'underlined': False,
+                                  'line_spacing': 0.0,
+                                  'left_indent': 0.0
+                                  }
             for key in s.attrib:
                 if key in ['font', 'size']:
                     self._styles[sid][key] = s.attrib[key]
@@ -312,11 +338,18 @@ class BookXML(object):
                     else:
                         self._styles[sid][key] = False
 
+                if key == 'underlined':
+                    if s.attrib[key] == 'true':
+                        self._styles[sid][key] = True
+                    else:
+                        self._styles[sid][key] = False
+
+
     def read_pages(self):
         pagesList = self.book.find('pagesList')
         self.book_objects = self.book.find('bookObjects')
 
-        pagesList = [ pagesList[2]]
+        #pagesList = [ pagesList[3]] #debug just grab one page
         for page in pagesList:
             id_ = page.attrib['id']
             self.pages.append(id_)
@@ -333,14 +366,20 @@ class BookXML(object):
 
                 base_style['color'] = '#%s' % base_style['color'][-6:] # trim off alpha channel
 
-                #text is a serialized structure of java objects stored in the dm tag
-                #TODO put this in some kind of Python class structure so it's easier to
-                #process.  Probably we need paragraph and span objects
-                dmtext = tc[0].text.encode('utf-8')
+                # text is a serialized structure of java objects stored in the dm tag
+                # we'll convert that to something we can parse
+
+                dm = tc.find('dm')
+
+                border_definition = tc.find('BorderDefinition')
+                # TODO: handle borders if
+
+                dmtext = dm.text.encode('utf-8')
                 dmobj = lxml.etree.fromstring(dmtext)[0] # get the first child of the java node
-                text_structure = javaxml_to_python(dmobj)
+                
+                text_structure = javaxml_to_python(dmobj) # a nested structure of lists and dicts
 
-
+                # Now to parse that structure of lists and dicts and make sense of it
                 pstyle = None
                 paragraph = None
 
@@ -382,10 +421,17 @@ class BookXML(object):
                         if 'Alignment' in i:
                             pstyle['alignment'] = int(i['Alignment'])
 
+                        if 'LeftIndent' in i:
+                            pstyle['left_indent'] = i['LeftIndent']
+
+
+                        if 'LineSpacing' in i:
+                            pstyle['line_spacing'] = i['LineSpacing']
+
                         continue
                     
                     spans_wrapper = (sp for sp in i) # list of items
-                    span_style = SpanStyle
+                    span_style = SpanStyle()
                     text_span = Span()
 
                     for span in spans_wrapper:
@@ -409,22 +455,30 @@ class BookXML(object):
                                         self._color_cache[span['foreground']['color_id']] = color
 
                                 color_hex = '#%x02%x02%x02' % ( color[0], color[1], color[2] )
-                                span_style['color'] = colorhex
+                                span_style['color'] = color_hex
                             if 'bold' in span:
                                 if span['bold'].lower() == 'true':
                                     span_style['bold'] = True
                                 else:
                                     span_style['bold'] = False
-                            else:
-                                span_style['bold'] = False
+                            #else:
+                            #    span_style['bold'] = False
 
                             if 'italic' in span:
                                 if span['italic'].lower() == 'true':
                                     span_style['italic'] = True
                                 else:
                                     span_style['italic'] = False
-                            else:
-                                span_style['italic'] = False
+                            #else:
+                            #    span_style['italic'] = False
+
+                            if 'underlined' in span:
+                                if span['underlined'].lower() == 'true':
+                                    span_style['underlined'] = True
+                                else:
+                                    span_style['underlined'] = False
+                            #else:
+                            #    span_style['underlined'] = False
 
                             if 'bsVar' in span:
                                 text_span.variable = span['bsVar']
@@ -481,11 +535,20 @@ class BookXML(object):
         pass
 
 if __name__ == "__main__":
-    book = BookXML('/home/torriem/booksmart/BookSmartData/isreal and jerusalem/isreal and jerusalem.book')
+    import sys
+    book = BookXML(sys.argv[1])
 
-    print (book.get_paragraph_styles())
-    print (book.get_span_styles())
-    print (book.text_boxes)
+    for ps in book.get_paragraph_styles():
+        print (ps)
+
+    for ss in book.get_span_styles():
+        print (ss)
+    print ()
+
+    for page_id in book.pages:
+        print (page_id, book.text_boxes[page_id])
+
+    print (len(book.get_paragraph_styles()), len(book.get_span_styles()), len(book.text_boxes))
 
 
 
