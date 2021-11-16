@@ -266,11 +266,23 @@ class BookXML(object):
 
         self.read_book_styles()
         self.read_pages()
-        print(self._paragraph_style_cache)
-        print(self._span_style_cache)
-        print(self.text_boxes)
 
         
+    def get_paragraph_styles(self):
+        """
+            Return a list of paragraph style objects representing the
+            unique paragraph styles in this book.
+        """
+
+        return [ self._paragraph_style_cache[item] for item in self._paragraph_style_cache ]
+
+    def get_span_styles(self):
+        """ 
+            Return a list of span style objects representing the unique
+            span styles used in this book.
+        """
+
+        return [ self._span_style_cache[item] for item in self._span_style_cache ]
 
     def read_book_styles(self):
         style_defs = self.book.findall('TextStyleDefinition')
@@ -471,9 +483,10 @@ class BookXML(object):
 if __name__ == "__main__":
     book = BookXML('/home/torriem/booksmart/BookSmartData/isreal and jerusalem/isreal and jerusalem.book')
 
-    import pprint
-    #pprint.pprint (book.text_boxes['8df464d8-7216-4972-8f0d-56ac7e918e48'])
-    #pprint.pprint (book.images)
+    print (book.get_paragraph_styles())
+    print (book.get_span_styles())
+    print (book.text_boxes)
+
 
 
 
