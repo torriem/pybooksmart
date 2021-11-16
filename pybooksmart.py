@@ -367,11 +367,21 @@ doc.content.automatic_styles.xmlnode.append(style_style)
 
 frame_count=1
 
-#pagesList = [ pagesList[4], pagesList[5] ]
+#pagesList = [ pagesList[144], pagesList[145], pagesList[146] ]
 for pageno, page in enumerate(pagesList):
     page_item_count=0
     print ("Processing page %d (%s):" % (pageno+1,page))
     page_info = soup.find("Page", id=page)
+
+    print (page_info.BackgroundDefinition)
+
+    if page_info.BackgroundDefinition['color'] != '#ffffffff':
+        # create new doc.styles.automatic_styles.page-layout from existing Mpm1 one
+        # create new doc.styles.master-styles.master-page entry to refer to it by a name
+        # if we are on the first page, just create a new paragraph style that sets it, and
+        # append a text:p tag that refers to it to doc.body.
+        # If we are on a subsequent page, we do it in the break paragraph
+        pass
 
     if pageno > 0:
         # insert a page break
@@ -379,14 +389,14 @@ for pageno, page in enumerate(pagesList):
         #set the page number with a pagebreak style to 1.
 
         # Add a new page break paragraph to the body
-        paragraph = Element(ns('text:p'))
+        break_paragraph = Element(ns('text:p'))
         if 'pagination' in page_info.attrs and page_info.attrs['pagination'] == 'START_PAGE_NUMBERS':
-            paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreakResetNum'
+            break_paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreakResetNum'
         else:
-            paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreak1'
-            paragraph.text = ''
+            break_paragraph.attrib[ns('text:style-name')] = 'BlurbPageBreak1'
+            break_paragraph.text = ''
 
-        doc.body.xmlnode.append(paragraph)
+        doc.body.xmlnode.append(break_paragraph)
          
     #paragraph = Element(ns('text:p'))
     #paragraph.text='Page %d' % pageno
