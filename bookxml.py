@@ -1,5 +1,6 @@
+import os
 import lxml.etree
-import pprint
+import PIL.Image
 
 class TextBox(object):
     def __init__(self, xmlre = None):
@@ -20,10 +21,33 @@ class TextBox(object):
         return repr(self)
 
 class ImageBox(object):
+    OVERWRITE = 1
+    SAVEASCOPY = 2
 
-    def get_crop_info(self, dpi):
-        pass
+    def __init__(self, filepath):
+        self.filename = filepath
+        image = PIL.Image.open(filepath)
+        self.dpi = image.info['dpi']
+        self.format = None
+        self.box_x = 0
+        self.box_y = 0
+        self.width = 0
+        self.height = 0
 
+        self.vflip = False
+        self.hflip = False
+        self.zoom = 1.0
+        self.crop_left = 0.0 # inches
+        self.crop_right = 0.0
+        self.crop_top = 0.0
+        self.crop_bottom = 0.0
+        self.x = 0.0
+        self.y = 0.0
+
+    def fix_dpi(self, save_disk = None):
+        if self.dpi[0] != 300 and self.dpi[0] != 600:
+           pass 
+            
 class ParagraphStyle(object):
     keys = ['font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
 
@@ -132,13 +156,6 @@ class SpanStyle(object):
             self.underlined = None
             #self.variable = None
 
-    def __repr__(self):
-        return 'SpanStyle(font:%s, size:%s, color:%s, bold:%s, italic: %s)' % (
-              self.font, self.size, self.color, self.bold, self.italic)
-
-    def __str__(self):
-        return repr(self)
-
     def simple_serialize(self):
         s = '%s|%s|%s|%s|%s|%s' % (self.font,
                                    self.size,
@@ -169,6 +186,41 @@ class SpanStyle(object):
         else:
             raise KeyError
 
+class PageStyle(object):
+    keys = ['name', 'bgcolor']
+
+    def __init__(self, xmlattribs = None):
+        if xmlattribs:
+            self.name = xmlattribs['id']
+            self.bgcolor = '#%s' % xmlattribs['color'][-6:]
+        else:
+            self.name = None
+            self.bgcolor = None
+
+    def __repr__(self):
+        return 'PageStyle(name:%s, bgcolor:%s)' % (
+              self.name, self.bgcolor)
+
+    def __str__(self):
+        return repr(self)
+
+    def simple_serialize(self):
+        s = '%s|%s' % (self.name,
+                       self.bgcolor)
+        return s
+
+
+    def __setitem__(self, name, value):
+        if name in PageStyle.keys:
+            self.__dict__[name] = value
+        else:
+            raise KeyError
+
+    def __getitem__(self, name):
+        if name in PageStyle.keys:
+            return self.__dict__[name]
+        else:
+            raise KeyError
 
 class javaxml_exception(Exception):
     pass
@@ -271,13 +323,12 @@ class BookXML(object):
         tree = lxml.etree.parse(open(book_file, 'r'))
         self.book = tree.getroot()
 
+        self.bookpath = os.path.dirname(os.path.abspath(book_file))
 
         self.pages = []
         self.page_info = {}
         self.text_boxes = {}
         self.images = {}
-        self.paragraph_styles = []
-        self.span_styles = []
 
         self._styles = {}  # BookSmart TextStyleDefinitions
         self._color_cache = {} # BookSmart color definitions
@@ -285,6 +336,9 @@ class BookXML(object):
         self._pgs_no = 0
         self._span_style_cache = {}
         self._ss_no = 0
+        self._page_style_cache = {}
+
+
 
         self.read_book_styles()
         self.read_pages()
@@ -305,6 +359,15 @@ class BookXML(object):
         """
 
         return [ self._span_style_cache[item] for item in self._span_style_cache ]
+
+    def get_page_styles(self):
+        """
+            Return a list of page style objects representing the unique
+            page styles used in this book. Currently this only refers
+            to the background color.
+        """
+        
+        return [ self._page_style_cache[item] for item in self._page_style_cache ]
 
     def read_book_styles(self):
         style_defs = self.book.findall('TextStyleDefinition')
@@ -350,14 +413,34 @@ class BookXML(object):
         self.book_objects = self.book.find('bookObjects')
 
         #pagesList = [ pagesList[3]] #debug just grab one page
-        for page in pagesList:
+        for (pageno, page) in enumerate(pagesList):
             id_ = page.attrib['id']
+
             self.pages.append(id_)
-            self.page_info[id_] = self.book_objects.findall("Page[@id='%s']" % id_)[0].attrib
+
+            backgrounddef = self.book_objects.findall("Page[@id='%s']" % id_)[0][2]
+            page_style = PageStyle(backgrounddef.attrib)
+
+            if not page_style.simple_serialize() in self._page_style_cache:
+                self._page_style_cache[page_style.simple_serialize()] = page_style
+
+            self.page_info[id_] = { 'page_style': page_style.name }
 
             self.text_boxes[id_] = []
             for tc in self.book_objects.findall("TextContent[@parentId='%s']" % id_):
                 text_box = TextBox(tc.attrib['re'])
+
+                coords = [ float(n) for n in tc.attrib['re'].split(',') ]
+
+                rxt = float(tc.attrib['rxt']) # kind of like a margin but only added to even pages to offset layout
+                text_box.x = coords[0] +  (rxt if not (pageno % 2) else 0)
+                text_box.y = coords[1]
+                text_box.width = coords[2]
+                text_box.height = coords[3]
+
+                #if rxt: print ('rxt is ', rxt)
+                #print ('%d, %d x %d, %d, on page %d' % (text_box.x, text_box.y, text_box.width, text_box.height, pageno+1))
+
 
                 base_style = {} # this will hold the default style going into the parsing
                 lookup_style = self._styles[tc.attrib['ts'].lower()]
@@ -515,18 +598,56 @@ class BookXML(object):
 
             self.images[id_] = []
             for ic in self.book_objects.findall("ImageContent[@parentId='%s']" % id_):
-                imagebox = {}
-                for key in ic.attrib:
-                    imagebox[key] = ic.attrib[key]
+                if not 'content' in ic.attrib:
+                    #print ("imagecontent %s has no image." % ic.attrib['id'])
+                    # empty box, no image, skip
+                    continue
 
-                imagebox['transformations'] = []
+                try:
+                    imagebox = ImageBox(os.path.join(self.bookpath,'library',ic.attrib['content']))
+                except FileNotFoundError as e:
+                    try:
+                        imagebox = ImageBox(os.path.join(self.bookpath,'library','%s.original' % ic.attrib['content']))
+                    except FileNotFoundError as e:
+                        # print ("could not find %s" % ic.attrib['content'])
+                        # skip
+                        continue
+
+                coords = [ float(n) for n in ic.attrib['re'].split(',') ]
+
+                rxt = float(ic.attrib['rxt']) # kind of like a margin but only added to even pages
+                imagebox.box_x = coords[0] + (rxt if not (pageno % 2) else 0)
+                imagebox.box_y = coords[1]
+                imagebox.width = coords[2]
+                imagebox.height = coords[3]
+
+                #if rxt != 0: print ('rxt was %d' % rxt)
+                #print ('IMG %d, %d x %d, %d on page %d' % (imagebox.box_x, imagebox.box_y, imagebox.width, imagebox.height, pageno+1))
+
+                # TODO: what to do with the rxt attribute on an ImageContent tag?
 
                 if len(ic.getchildren()):
-                    for transform in ic[0]:
-                        imagebox['transformations'].append(transform.attrib)
+                    transform = ic[0][0]
 
+                    imagebox.x = float(transform.attrib['x']) # in pts
+                    imagebox.y = float(transform.attrib['y']) 
+
+                    imagebox.zoom = float(transform.attrib['zoom']) / 100
+                    if transform.attrib['vflip'] == 'true':
+                        imagebox.vflip = True
+                    else:
+                        imagebox.vflip = False
+
+                    if transform.attrib['hflip'] == 'true':
+                        imagebox.hflip = True
+                    else:
+                        imagebox.hflip = False
+
+                #print ("found %s on page %d" % (ic.attrib['content'], pageno+1))
                 self.images[id_].append(imagebox)
-                
+
+
+
 
     def page_ids(self):
         return self.page_ids
@@ -538,6 +659,8 @@ if __name__ == "__main__":
     import sys
     book = BookXML(sys.argv[1])
 
+
+    """
     for ps in book.get_paragraph_styles():
         print (ps)
 
@@ -545,11 +668,13 @@ if __name__ == "__main__":
         print (ss)
     print ()
 
+
     for page_id in book.pages:
         print (page_id, book.text_boxes[page_id])
+        print (page_id, book.images[page_id])
 
-    print (len(book.get_paragraph_styles()), len(book.get_span_styles()), len(book.text_boxes))
-
+    #print (len(book.get_paragraph_styles()), len(book.get_span_styles()), len(book.text_boxes))
+    """
 
 
 
