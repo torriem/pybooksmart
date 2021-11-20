@@ -28,7 +28,8 @@ class ImageBox(object):
         self.filename = filepath
         image = PIL.Image.open(filepath)
         self.dpi = image.info['dpi']
-        self.format = None
+        self.format = image.format.lower()
+        self.img_size = image.size
         self.box_x = 0
         self.box_y = 0
         self.width = 0
@@ -45,8 +46,120 @@ class ImageBox(object):
         self.y = 0.0
 
     def fix_dpi(self, save_disk = None):
+        """
+            fix the embedded image file DPI if necessary. 
+
+            If save_disk is OVERWRITE, set the DPI on the file in place,
+            setting it permanently.
+
+            If save_disk is SAVEASCOPY, create a modified image file in
+            the same directory as the original image.  Useful if the final
+            ODF document is linking to the images rather than embedding them.
+
+            If save_disk is None, create a temporary file where the image is
+            copied and the DPI set.
+        """
+
         if self.dpi[0] != 300 and self.dpi[0] != 600:
+            # If DPI seems odd, LibreOffice often has problems with the dpi and
+            # any cropping we do to the image will be wrong.  So call out to
+            # exiftool externally to change the DPI to a default of 300.
+
+            #TODO
            pass 
+
+    def crop_image(self):
+        """
+            Converts the BookSmart style of image zooming and placement into
+            some crop measurements that the ODF formats use.  DPI of the image
+            file must be set correctly for this to work.
+        """
+
+        img_aspect = self.img_size[0] / self.img_size[1]
+        box_aspect = self.width / self.height
+
+        # calculate pix per point at 100% scale (smallest side scaled to box)
+        # Booksmart transformation numbers are all in points based on the
+        # box size, so we have to figure out what that means in pixels so we
+        # can compute the necessary clipping box in pixels.
+
+        if img_aspect >= 1 and box_aspect >= 1:
+            # aspects both >= 1
+
+            if box_aspect < img_aspect:
+                # case 1, box aspect < image aspect: scale image y
+                pixperpt = self.img_size[1] / self.height
+            else:
+                # case 2, box aspect > image aspect: scale image x
+                pixperpt = self.img_size[0] / self.width
+        elif img_aspect < 1 and box_aspect < 1:
+            # aspects both < 1
+            if box_aspect > img_aspect:
+                # case 1, box aspect > image aspect: scale image x
+                pixperpt = self.img_size[0] / self.width
+            else:
+                # case 2, box aspect < image aspect: scale image y
+                pixperpt = self.img_size[1] / self.height
+        elif box_aspect >=1 and img_aspect <1:
+                # box aspect >= 1, image aspect < 1: scale image x
+                pixperpt = self.img_size[0] / self.width
+        else:
+                # box aspect < 1, image aspect >= 1: scale image y
+                pixperpt = self.img_size[1] / self.height
+
+        # calculate how much of the image will be shown as a percentage
+        clip_pixperpt = pixperpt / zoom
+
+        # enlarge image dimensions by zoom.
+        width = self.img_size[0] / clip_pixperpt #width in points
+        height = self.img_size[1] / clip_pixperpt #height in points
+        crop_left = 0
+        crop_right = 0
+        crop_top = 0
+        crop_bottom = 0
+
+        #print ('pic size in pts: ', width,height)
+        
+        # if x is negative, crop on the left, set x to 0
+        if x < 0:
+            crop_left = int(abs(x) * clip_pixperpt) #in pixels
+            width += x # remove left crop from width
+            x = 0
+        
+        # if y is negative, crop on the top, set y to 0
+        if y < 0:
+            crop_top = int(abs(y) * clip_pixperpt)
+            height += y # remove top crop from height
+            y = 0
+
+        if (width + x) > self.width: 
+            # if image sticks beyond the right side of the frame
+            # crop it from the right
+            crop_right = width + x - self.width
+            width -= crop_right
+            crop_right = int(crop_right * clip_pixperpt)
+            #print ('cropping right ', crop_right)
+
+
+        if (height + y ) > self.height:
+            # if image sticks beyond the bottom of the frame,
+            # crop it from the bottom.
+            crop_bottom = height + y - self.height
+            height -= crop_bottom
+            crop_bottom = int(crop_bottom * clip_pixperpt)
+
+        # convert from pixels to inches, using the image dpi
+        self.crop_top = crop_top / self.dpi
+        self.crop_bottom = crop_bottom / self.dpi
+        self.crop_left = crop_left / self.dpi
+        self.crop_right = crop_right / self.dpi
+
+    def __str__(self):
+        return ' %s, %s %d %d, %d %d, %d' % (self.filename, self.format, self.dpi[0], self.box_x,
+                                        self.box_y, self.width, self.height)
+
+    def __repr__(self):
+        return str(self)
             
 class ParagraphStyle(object):
     keys = ['font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
@@ -668,13 +781,12 @@ if __name__ == "__main__":
         print (ss)
     print ()
 
+    """
 
     for page_id in book.pages:
-        print (page_id, book.text_boxes[page_id])
         print (page_id, book.images[page_id])
 
     #print (len(book.get_paragraph_styles()), len(book.get_span_styles()), len(book.text_boxes))
-    """
 
 
 
