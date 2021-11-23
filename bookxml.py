@@ -1,6 +1,8 @@
 import os
 import lxml.etree
 import PIL.Image
+import tempfile
+import subprocess
 
 class TextBox(object):
     def __init__(self, xmlre = None):
@@ -45,7 +47,7 @@ class ImageBox(object):
         self.x = 0.0
         self.y = 0.0
 
-    def fix_dpi(self, save_disk = None):
+    def fix_dpi(self, save_disk = None, **kwargs):
         """
             fix the embedded image file DPI if necessary. 
 
@@ -58,6 +60,9 @@ class ImageBox(object):
 
             If save_disk is None, create a temporary file where the image is
             copied and the DPI set.
+
+            If tempdir is passed as a kwarg, a temporary file will be created
+            within that directory if we're not using SAVEASCOPY or OVERWRITE
         """
 
         if self.dpi[0] != 300 and self.dpi[0] != 600:
@@ -65,8 +70,37 @@ class ImageBox(object):
             # any cropping we do to the image will be wrong.  So call out to
             # exiftool externally to change the DPI to a default of 300.
 
-            #TODO
-           pass 
+            if not save_disk:
+                if 'tempdir' in kwargs:
+                    if not os.path.exists(kwargs['tempdir']):
+                        os.mkdir(kwargs['tempdir'])
+
+                    newfile = os.path.join(kwargs['tempdir'],os.path.basename(os.path.abspath(self.filename)))+'.%s' % self.format
+                    #print (newfile)
+                    with open(newfile,'wb') as newfileobj:
+                        newfileobj.write(open(self.filename,'rb').read())
+                else:
+                    newfileobj = tempfile.NamedTemporaryFile(delete=False, suffix='.%s' % self.format)
+                    newfileobj.write(open(self.filename,'rb').read())
+                    newfile = newfileobj.name
+                    newfileobj.close()
+            elif save_disk == ImageBox.SAVEASCOPY:
+                newfile = self.filename + ".300dpi.%s" % self.format
+                with open(newfile,'wb') as newfileobj:
+                    newfileobj.write(open(self.filename,'rb').read())
+            else:
+                newfile = self.filename
+
+            exiftool = kwargs.get('exiftool','/usr/bin/exiftool')
+
+            # call exiftool to set the DPI to 300:
+            subprocess.run([exiftool, '-Xresolution=300', '-Yresolution=300', newfile], capture_output = True)
+
+            if not save_disk == ImageBox.OVERWRITE:
+                # delete exiftool's backup
+                os.path.unlink("%s_original" % newfile)
+
+            self.dpi = (300,300)
 
     def crop_image(self):
         """
@@ -108,7 +142,7 @@ class ImageBox(object):
                 pixperpt = self.img_size[1] / self.height
 
         # calculate how much of the image will be shown as a percentage
-        clip_pixperpt = pixperpt / zoom
+        clip_pixperpt = pixperpt / self.zoom
 
         # enlarge image dimensions by zoom.
         width = self.img_size[0] / clip_pixperpt #width in points
@@ -121,38 +155,38 @@ class ImageBox(object):
         #print ('pic size in pts: ', width,height)
         
         # if x is negative, crop on the left, set x to 0
-        if x < 0:
-            crop_left = int(abs(x) * clip_pixperpt) #in pixels
-            width += x # remove left crop from width
-            x = 0
+        if self.x < 0:
+            crop_left = int(abs(self.x) * clip_pixperpt) #in pixels
+            width += self.x # remove left crop from width
+            self.x = 0
         
         # if y is negative, crop on the top, set y to 0
-        if y < 0:
-            crop_top = int(abs(y) * clip_pixperpt)
-            height += y # remove top crop from height
-            y = 0
+        if self.y < 0:
+            crop_top = int(abs(self.y) * clip_pixperpt)
+            height += self.y # remove top crop from height
+            self.y = 0
 
-        if (width + x) > self.width: 
+        if (width + self.x) > self.width: 
             # if image sticks beyond the right side of the frame
             # crop it from the right
-            crop_right = width + x - self.width
+            crop_right = width + self.x - self.width
             width -= crop_right
             crop_right = int(crop_right * clip_pixperpt)
             #print ('cropping right ', crop_right)
 
 
-        if (height + y ) > self.height:
+        if (height + self.y ) > self.height:
             # if image sticks beyond the bottom of the frame,
             # crop it from the bottom.
-            crop_bottom = height + y - self.height
+            crop_bottom = height + self.y - self.height
             height -= crop_bottom
             crop_bottom = int(crop_bottom * clip_pixperpt)
 
         # convert from pixels to inches, using the image dpi
-        self.crop_top = crop_top / self.dpi
-        self.crop_bottom = crop_bottom / self.dpi
-        self.crop_left = crop_left / self.dpi
-        self.crop_right = crop_right / self.dpi
+        self.crop_top = crop_top / self.dpi[1]
+        self.crop_bottom = crop_bottom / self.dpi[1]
+        self.crop_left = crop_left / self.dpi[0]
+        self.crop_right = crop_right / self.dpi[0]
 
     def __str__(self):
         return ' %s, %s %d %d, %d %d, %d' % (self.filename, self.format, self.dpi[0], self.box_x,
@@ -163,6 +197,10 @@ class ImageBox(object):
             
 class ParagraphStyle(object):
     keys = ['font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
+    ALIGN = { 1: 'center',
+              2: 'end',
+              0: 'start',
+              3: 'justify'}
 
     def __init__(self, style_dict = None):
         self.name = None
@@ -435,8 +473,11 @@ class BookXML(object):
     def __init__(self, book_file):
         tree = lxml.etree.parse(open(book_file, 'r'))
         self.book = tree.getroot()
+        self.info = {}
+        for book_var in self.book.findall('bookVar'):
+            self.info[book_var.attrib['name'][1:].lower()] = book_var.attrib['value']
 
-        self.bookpath = os.path.dirname(os.path.abspath(book_file))
+        self.path = os.path.dirname(os.path.abspath(book_file))
 
         self.pages = []
         self.page_info = {}
@@ -717,10 +758,10 @@ class BookXML(object):
                     continue
 
                 try:
-                    imagebox = ImageBox(os.path.join(self.bookpath,'library',ic.attrib['content']))
+                    imagebox = ImageBox(os.path.join(self.path,'library',ic.attrib['content']))
                 except FileNotFoundError as e:
                     try:
-                        imagebox = ImageBox(os.path.join(self.bookpath,'library','%s.original' % ic.attrib['content']))
+                        imagebox = ImageBox(os.path.join(self.path,'library','%s.original' % ic.attrib['content']))
                     except FileNotFoundError as e:
                         # print ("could not find %s" % ic.attrib['content'])
                         # skip
@@ -733,11 +774,6 @@ class BookXML(object):
                 imagebox.box_y = coords[1]
                 imagebox.width = coords[2]
                 imagebox.height = coords[3]
-
-                #if rxt != 0: print ('rxt was %d' % rxt)
-                #print ('IMG %d, %d x %d, %d on page %d' % (imagebox.box_x, imagebox.box_y, imagebox.width, imagebox.height, pageno+1))
-
-                # TODO: what to do with the rxt attribute on an ImageContent tag?
 
                 if len(ic.getchildren()):
                     transform = ic[0][0]
@@ -782,12 +818,18 @@ if __name__ == "__main__":
     print ()
 
     """
+    print (book.info)
 
+    """
     for page_id in book.pages:
-        print (page_id, book.images[page_id])
+        for image in book.images[page_id]:
+            image.fix_dpi(ImageBox.OVERWRITE, tempdir='/tmp/bookxmltemp')
+            image.crop_image()
+            print (image.x, image.y, image.crop_top, image.crop_right, image.crop_bottom, image.crop_left)
+        #print (page_id, book.images[page_id])
 
     #print (len(book.get_paragraph_styles()), len(book.get_span_styles()), len(book.text_boxes))
-
+    """
 
 
 
