@@ -196,7 +196,7 @@ class ImageBox(object):
         return str(self)
             
 class ParagraphStyle(object):
-    keys = ['font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
+    keys = ['name', 'font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
     ALIGN = { 1: 'center',
               2: 'end',
               0: 'start',
@@ -232,7 +232,7 @@ class ParagraphStyle(object):
              self.line_spacing, self.left_indent)
 
     def __repr__(self):
-        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s, underlined:%s, line_spacing=%f, left_indet=%f}" % (
+        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s, underlined:%s, line_spacing=%f, left_indent=%f}" % (
                 self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underlined,
                 self.line_spacing, self.left_indent)
 
@@ -285,7 +285,7 @@ class Span(object):
         return repr(self)
 
 class SpanStyle(object):
-    keys = ['font', 'size', 'color', 'bold', 'italic', 'underlined']
+    keys = ['name', 'font', 'size', 'color', 'bold', 'italic', 'underlined']
 
     def __init__(self, style_dict = None):
         self.name = None
@@ -495,10 +495,11 @@ class BookXML(object):
         self._ss_no = 0
         self._page_style_cache = {}
 
-
+        self.fonts = []
 
         self.read_book_styles()
         self.read_pages()
+
 
         
     def get_paragraph_styles(self):
@@ -670,6 +671,9 @@ class BookXML(object):
 
                         continue
                     
+                    if not pstyle['font'] in self.fonts:
+                        self.fonts.append(pstyle['font'])
+
                     spans_wrapper = (sp for sp in i) # list of items
                     span_style = SpanStyle()
                     text_span = Span()
@@ -727,6 +731,9 @@ class BookXML(object):
                             span = next(spans_wrapper)
                         
                         if span and span.strip():
+
+                            if not span_style['font'] in self.fonts:
+                                self.fonts.append(span_style['font'])
 
                             if not span_style.simple_serialize() in self._span_style_cache:
                                 span_style.name = 'SS%d' % self._ss_no
