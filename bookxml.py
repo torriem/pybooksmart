@@ -477,6 +477,9 @@ class BookXML(object):
         for book_var in self.book.findall('bookVar'):
             self.info[book_var.attrib['name'][1:].lower()] = book_var.attrib['value']
 
+        self.width = float(self.book.attrib['width']) # in points
+        self.height = float(self.book.attrib['height'])
+
         self.path = os.path.dirname(os.path.abspath(book_file))
 
         self.pages = []
