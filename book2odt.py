@@ -141,13 +141,15 @@ for ps in bs.get_paragraph_styles():
         st_p.attrib[ns('fo:font-weight')] = 'bold'
     if ps['italic']:
         st_p.attrib[ns('fo:font-style')] = 'italic'
-    if ps['underlined']:
+    if ps['underline']:
         st_p.attrib[ns('style:text-underline-color')] = 'font-color'
         st_p.attrib[ns('style:text-underline-style')] = 'solid'
         st_p.attrib[ns('style:text-underline-width')] = 'auto'
 
     st_p.attrib[ns('fo:font-size')] = '%spt' % ps['size']
     st_p.attrib[ns('style:font-name')] = ps['font']
+    if ps['color']:
+        st_p.attrib[ns('fo:color')] = ps['color']
 
     ss.append(st_p)
 
@@ -169,7 +171,7 @@ for ts in bs.get_span_styles():
         st_p.attrib[ns('fo:font-weight')] = 'bold'
     if ts['italic']:
         st_p.attrib[ns('fo:font-style')] = 'italic'
-    if ts['underlined']:
+    if ts['underline']:
         st_p.attrib[ns('style:text-underline-color')] = 'font-color'
         st_p.attrib[ns('style:text-underline-style')] = 'solid'
         st_p.attrib[ns('style:text-underline-width')] = 'auto'
@@ -178,6 +180,9 @@ for ts in bs.get_span_styles():
         st_p.attrib[ns('fo:font-size')] = '%spt' % ts['size']
     if ts['font']:
         st_p.attrib[ns('style:font-name')] = ts['font']
+    if ts['color']:
+        st_p.attrib[ns('fo:color')] = ts['color']
+
 
     ss.append(st_p)
 
@@ -206,7 +211,7 @@ graphic_properties.attrib[ns('style:wrap')] = 'parallel'
 style_style = Element(ns('style:style'))
 style_style.attrib[ns('style:family')] = 'graphic'
 style_style.attrib[ns('style:name')] = 'OuterFrameStyle'
-#style_style.attrib[ns('style:parent-style-name')] = 'Frame'
+style_style.attrib[ns('style:parent-style-name')] = 'Frame'
 
 graphic_properties = Element(ns('style:graphic-properties'))
 graphic_properties.attrib[ns('fo:border')] = 'none'
@@ -284,7 +289,7 @@ for page_no, page in enumerate(bs.pages):
                 if s.style:
                     span.attrib[ns('text:style-name')] = s.style
                 span.text = s.text
-                print (s.text)
+                print (s.style, s.text)
                 paragraph.append(span)
             dtb.append(paragraph)
 
