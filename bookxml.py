@@ -196,7 +196,7 @@ class ImageBox(object):
         return str(self)
             
 class ParagraphStyle(object):
-    keys = ['name', 'font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underlined']
+    keys = ['name', 'font', 'size', 'color', 'alignment', 'bold', 'italic', 'line_spacing', 'left_indent', 'underline']
     ALIGN = { 1: 'center',
               2: 'end',
               0: 'start',
@@ -212,7 +212,7 @@ class ParagraphStyle(object):
             self.alignment = style_dict['align']
             self.bold      = style_dict['bold']
             self.italic    = style_dict['italic']
-            self.italic    = style_dict['underlined']
+            self.italic    = style_dict['underline']
             self.line_spacing = style_dict.get('line_spacing',0.0)
             self.left_indent = style_dict.get('left_indent',0.0)
         else:
@@ -222,18 +222,18 @@ class ParagraphStyle(object):
             self.alignment = None
             self.bold      = None
             self.italic    = None
-            self.underlined    = None
+            self.underline    = None
             self.line_spacing = 0.0
             self.left_indent = 0.0
 
     def __str__(self):
-        return "name=%s, font=%s, size=%s, color=%s, alignment=%d, bold=%s, italic=%s, underlined=%s, line_spacing=%f, left_indet=%f" % (
-             self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underlined,
+        return "name=%s, font=%s, size=%s, color=%s, alignment=%d, bold=%s, italic=%s, underline=%s, line_spacing=%f, left_indet=%f" % (
+             self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underline,
              self.line_spacing, self.left_indent)
 
     def __repr__(self):
-        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s, underlined:%s, line_spacing=%f, left_indent=%f}" % (
-                self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underlined,
+        return "Paragraph Style {name:%s, font:%s, size:%s, color:%s, alignment:%d, bold:%s, italic:%s, underline:%s, line_spacing=%f, left_indent=%f}" % (
+                self.name, self.font, self.size, self.color, self.alignment, self.bold, self.italic, self.underline,
                 self.line_spacing, self.left_indent)
 
     def __setitem__(self, name, value):
@@ -255,7 +255,7 @@ class ParagraphStyle(object):
                                             self.alignment,
                                             self.bold,
                                             self.italic,
-                                            self.underlined,
+                                            self.underline,
                                             self.line_spacing,
                                             self.left_indent)
 
@@ -285,7 +285,7 @@ class Span(object):
         return repr(self)
 
 class SpanStyle(object):
-    keys = ['name', 'font', 'size', 'color', 'bold', 'italic', 'underlined']
+    keys = ['name', 'font', 'size', 'color', 'bold', 'italic', 'underline']
 
     def __init__(self, style_dict = None):
         self.name = None
@@ -296,7 +296,7 @@ class SpanStyle(object):
             self.color = style_dict.get('color', None)
             self.bold = style_dict.get('bold', None)
             self.italic = style_dict.get('italic', None)
-            self.underlined = style_dict.get('underlined', None)
+            self.underline = style_dict.get('underline', None)
             #self.variable = style_dict.get('variable', None)
         else:
             self.font = None
@@ -304,7 +304,7 @@ class SpanStyle(object):
             self.color = None
             self.bold = None
             self.italic = None
-            self.underlined = None
+            self.underline = None
             #self.variable = None
 
     def simple_serialize(self):
@@ -313,17 +313,17 @@ class SpanStyle(object):
                                    self.color,
                                    self.bold,
                                    self.italic,
-                                   self.underlined)
+                                   self.underline)
 
         return s
 
     def __str__(self):
-        return "name=%s, font=%s, size=%s, color=%s, bold=%s, italic=%s, underlined=%s" % (
-             self.name, self.font, self.size, self.color, self.bold, self.italic, self.underlined)
+        return "name=%s, font=%s, size=%s, color=%s, bold=%s, italic=%s, underline=%s" % (
+             self.name, self.font, self.size, self.color, self.bold, self.italic, self.underline)
 
     def __repr__(self):
-        return "Span Style {name:%s, font:%s, size:%s, color:%s, bold:%s, italic:%s, underlined:%s}" % (
-                self.name, self.font, self.size, self.color, self.bold, self.italic, self.underlined)
+        return "Span Style {name:%s, font:%s, size:%s, color:%s, bold:%s, italic:%s, underline:%s}" % (
+                self.name, self.font, self.size, self.color, self.bold, self.italic, self.underline)
 
     def __setitem__(self, name, value):
         if name in SpanStyle.keys:
@@ -535,7 +535,7 @@ class BookXML(object):
             self._styles[sid] = { 'align': 0,
                                   'bold' : False,
                                   'italic' : False,
-                                  'underlined': False,
+                                  'underline': False,
                                   'line_spacing': 0.0,
                                   'left_indent': 0.0
                                   }
@@ -559,7 +559,7 @@ class BookXML(object):
                     else:
                         self._styles[sid][key] = False
 
-                if key == 'underlined':
+                if key == 'underline':
                     if s.attrib[key] == 'true':
                         self._styles[sid][key] = True
                     else:
@@ -702,7 +702,7 @@ class BookXML(object):
                                     if 'color_id' in span['foreground']:
                                         self._color_cache[span['foreground']['color_id']] = color
 
-                                color_hex = '#%x02%x02%x02' % ( color[0], color[1], color[2] )
+                                color_hex = '#%02x%02x%02x' % ( color[0], color[1], color[2] )
                                 span_style['color'] = color_hex
                             if 'bold' in span:
                                 if span['bold'].lower() == 'true':
@@ -720,13 +720,13 @@ class BookXML(object):
                             #else:
                             #    span_style['italic'] = False
 
-                            if 'underlined' in span:
-                                if span['underlined'].lower() == 'true':
-                                    span_style['underlined'] = True
+                            if 'underline' in span:
+                                if span['underline'].lower() == 'true':
+                                    span_style['underline'] = True
                                 else:
-                                    span_style['underlined'] = False
+                                    span_style['underline'] = False
                             #else:
-                            #    span_style['underlined'] = False
+                            #    span_style['underline'] = False
 
                             if 'bsVar' in span:
                                 text_span.variable = span['bsVar']
@@ -734,9 +734,9 @@ class BookXML(object):
                             # now get the text that follows
                             span = next(spans_wrapper)
                         
-                        if span and span.strip():
-
-                            if not span_style['font'] in self.fonts:
+                        if span: # and span.strip():
+                            #print (span_style['font'])
+                            if span_style['font'] and not span_style['font'] in self.fonts:
                                 self.fonts.append(span_style['font'])
 
                             if not span_style.simple_serialize() in self._span_style_cache:
