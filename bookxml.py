@@ -576,13 +576,17 @@ class BookXML(object):
 
             self.pages.append(id_)
 
-            backgrounddef = self.book_objects.findall("Page[@id='%s']" % id_)[0][2]
+            pagetag = self.book_objects.findall("Page[@id='%s']" % id_)[0]
+            backgrounddef = pagetag.find("BackgroundDefinition")
+            #self.book_objects.findall("Page[@id='%s']" % id_)[0][2]
             page_style = PageStyle(backgrounddef.attrib)
 
             if not page_style.simple_serialize() in self._page_style_cache:
                 self._page_style_cache[page_style.simple_serialize()] = page_style
 
             self.page_info[id_] = { 'page_style': page_style.name }
+            if 'pagination' in pagetag.attrib:
+                self.page_info[id_]['pagination'] = pagetag.attrib['pagination']
 
             self.text_boxes[id_] = []
             for tc in self.book_objects.findall("TextContent[@parentId='%s']" % id_):
