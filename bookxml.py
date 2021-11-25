@@ -86,6 +86,11 @@ class ImageBox(object):
                     newfileobj.close()
             elif save_disk == ImageBox.SAVEASCOPY:
                 newfile = self.filename + ".300dpi.%s" % self.format
+                if os.path.exists(newfile):
+                    self.filename = newfile
+                    self.dpi = (300, 300)
+                    return
+
                 with open(newfile,'wb') as newfileobj:
                     newfileobj.write(open(self.filename,'rb').read())
             else:
@@ -94,12 +99,12 @@ class ImageBox(object):
             exiftool = kwargs.get('exiftool','/usr/bin/exiftool')
 
             # call exiftool to set the DPI to 300:
-            subprocess.run([exiftool, '-Xresolution=300', '-Yresolution=300', newfile], capture_output = True)
+            subprocess.run([exiftool, '-jfif:Xresolution=300', '-jfif:Yresolution=300', '-Xresolution=300', '-Yresolution=300', newfile], capture_output = True)
 
             if not save_disk == ImageBox.OVERWRITE:
                 # delete exiftool's backup
-                os.path.unlink("%s_original" % newfile)
-
+                os.unlink("%s_original" % newfile)
+            self.filename = newfile
             self.dpi = (300,300)
 
     def crop_image(self):
@@ -473,6 +478,7 @@ class BookXML(object):
     def __init__(self, book_file):
         tree = lxml.etree.parse(open(book_file, 'r'))
         self.book = tree.getroot()
+        self.book_path = os.path.dirname(book_file)
         self.info = {}
         for book_var in self.book.findall('bookVar'):
             self.info[book_var.attrib['name'][1:].lower()] = book_var.attrib['value']
