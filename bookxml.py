@@ -611,11 +611,12 @@ class BookXML(object):
 
 
                 base_style = {} # this will hold the default style going into the parsing
-                lookup_style = self._styles[tc.attrib['ts'].lower()]
+                lookup_style = self._styles.get(tc.attrib['ts'].lower(),{})
                 for key in lookup_style:
                     base_style[key] = lookup_style[key]
 
-                base_style['color'] = '#%s' % base_style['color'][-6:] # trim off alpha channel
+                if 'color' in base_style:
+                    base_style['color'] = '#%s' % base_style['color'][-6:] # trim off alpha channel
 
                 # text is a serialized structure of java objects stored in the dm tag
                 # we'll convert that to something we can parse
