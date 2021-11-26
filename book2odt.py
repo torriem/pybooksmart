@@ -4,15 +4,19 @@ import ezodf
 from ezodf.const import ALL_NSMAP
 from lxml.etree import QName, Element
 import bookxml
+import odfcommon
 
 def ns(combined_name):
     prefix,name = combined_name.split(':')
     return "{%s}%s" % (ALL_NSMAP[prefix], name)
 
-def create_frame(pageno, frameno, x,y, width, height, zindex):
+def create_frame(pageno, frameno, x,y, width, height, zindex, transparent=False):
     draw_frame = Element(ns('draw:frame'))
     draw_frame.attrib[ns('draw:name')] = 'Frame%d' % (frameno)
-    draw_frame.attrib[ns('draw:style-name')] = 'OuterFrameStyle'
+    if transparent:
+        draw_frame.attrib[ns('draw:style-name')] = 'OuterFrameTextStyle'
+    else:
+        draw_frame.attrib[ns('draw:style-name')] = 'OuterFrameImageStyle'
     draw_frame.attrib[ns('svg:width')] = '%dpt' % width
     draw_frame.attrib[ns('svg:height')] = '%dpt' % height
     draw_frame.attrib[ns('svg:x')] = '%dpt' % x
@@ -22,7 +26,6 @@ def create_frame(pageno, frameno, x,y, width, height, zindex):
     draw_frame.attrib[ns('draw:z-index')] = '%d' % (zindex + 1)
 
     return draw_frame
-
 
 def setup_odt(bodf, bs):
     # set up metadata
@@ -195,7 +198,7 @@ def setup_odt(bodf, bs):
     # Outer frame style
     style_style = Element(ns('style:style'))
     style_style.attrib[ns('style:family')] = 'graphic'
-    style_style.attrib[ns('style:name')] = 'OuterFrameStyle'
+    style_style.attrib[ns('style:name')] = 'OuterFrameImageStyle'
     style_style.attrib[ns('style:parent-style-name')] = 'Frame'
 
     graphic_properties = Element(ns('style:graphic-properties'))
@@ -214,12 +217,36 @@ def setup_odt(bodf, bs):
     style_style.append(graphic_properties)
     bodf.content.automatic_styles.xmlnode.append(style_style)
 
+    # Outer frame transparent style
+    style_style = Element(ns('style:style'))
+    style_style.attrib[ns('style:family')] = 'graphic'
+    style_style.attrib[ns('style:name')] = 'OuterFrameTextStyle'
+    style_style.attrib[ns('style:parent-style-name')] = 'Frame'
+
+    graphic_properties = Element(ns('style:graphic-properties'))
+    graphic_properties.attrib[ns('fo:border')] = 'none'
+    graphic_properties.attrib[ns('fo:margin-bottom')] = '0in'
+    #graphic_properties.attrib[ns('fo:margin-top')] = '0in'
+    #graphic_properties.attrib[ns('fo:margin-left')] = '0in'
+    #graphic_properties.attrib[ns('fo:margin-right')] = '0in'
+    graphic_properties.attrib[ns('fo:padding')] = '0in'
+    graphic_properties.attrib[ns('style:horizontal-pos')] = 'from-left'
+    graphic_properties.attrib[ns('style:vertical-pos')] = 'from-top'
+    graphic_properties.attrib[ns('style:vertical-rel')] = 'page'
+    graphic_properties.attrib[ns('style:horizontal-rel')] = 'page'
+    graphic_properties.attrib[ns('style:wrap')] = 'run-through'
+    graphic_properties.attrib[ns('draw:opacity')] = '0%'
+
+
+    style_style.append(graphic_properties)
+    bodf.content.automatic_styles.xmlnode.append(style_style)
 def process_odt_pages(bodt, bs, **kwargs):
     #process pages
     print ("Converting pages...")
 
     frame_no = 0
 
+    #for page_no, page in enumerate([ bs.pages[1] ]):
     for page_no, page in enumerate(bs.pages):
         page_item_count = 0
 
@@ -257,7 +284,11 @@ def process_odt_pages(bodt, bs, **kwargs):
 
         print ('text boxes...', end='')
         for tb in bs.text_boxes[page]:
-            outer_frame = create_frame(page_no, frame_no, tb.x, tb.y, tb.width, tb.height, page_item_count)
+            #create a transparent frame so text can live on top of images (if the z thing is right)
+            outer_frame = create_frame(page_no, frame_no, tb.x, tb.y, 
+                                       tb.width, tb.height, page_item_count,
+                                       transparent = True)
+
             bodf.body.xmlnode.insert(2,outer_frame)
 
             dtb = Element(ns('draw:text-box'))
@@ -326,11 +357,12 @@ def process_odt_pages(bodt, bs, **kwargs):
 
             #TODO: mirroring
             style_graphic_properties.attrib[ns('style:mirror')] = 'none'
+            #print ('cropping pix(%f, %f, %f, %f)' % (ib.crop_top, ib.crop_right, ib.crop_bottom, ib.crop_left))
             style_graphic_properties.attrib[ns('fo:clip')] = \
-                     'rect(%fin, %fin, %fin, %fin)' % (ib.crop_top / ib.dpi[1], 
-                                                       ib.crop_right / ib.dpi[0], 
-                                                       ib.crop_bottom / ib.dpi[1], 
-                                                       ib.crop_left / ib.dpi[1])
+                     'rect(%fin, %fin, %fin, %fin)' % (ib.crop_top, 
+                                                       ib.crop_right, 
+                                                       ib.crop_bottom, 
+                                                       ib.crop_left)
             style_graphic_properties.attrib[ns('draw:luminance')] = '0%'
             style_graphic_properties.attrib[ns('draw:contrast')] = '0%'
             style_graphic_properties.attrib[ns('draw:red')] = '0%'
@@ -340,6 +372,12 @@ def process_odt_pages(bodt, bs, **kwargs):
             style_graphic_properties.attrib[ns('draw:color-inversion')] = 'false'
             style_graphic_properties.attrib[ns('draw:image-opacity')] = '100%'
             style_graphic_properties.attrib[ns('draw:color-mode')] = 'standard'
+            if ib.vflip and ib.hflip:
+                style_graphic_properties.attrib[ns('style:mirror')] = 'horizontal vertical'
+            elif ib.vflip:
+                style_graphic_properties.attrib[ns('style:mirror')] = 'vertical'
+            elif ib.hflip:
+                style_graphic_properties.attrib[ns('style:mirror')] = 'horizontal'
             style_style.append(style_graphic_properties)
 
             # place image at x,y, set display width and height
@@ -364,9 +402,16 @@ def process_odt_pages(bodt, bs, **kwargs):
             draw_image = Element(ns('draw:image'))
 
             if kwargs.get('link_images', False):
+                # NOTE: Due to a long-standing bug in LibreOffice, DPI is not read from
+                # linked image files, so using non-destructive cropping (preserving
+                # original image files) does not work at all.  Effectively makes linking
+                # images useless for our purposes.
+
                 # embedding, calculate path
                 image_path = '..' + ib.filename[len(bs.book_path):]
             else:
+                # create odf image to embed in zip file.  self registers
+                odf_image = odfcommon.ODFImageObject(bodf, ib.filename, ib.format)
                 image_path = 'Pictures/' + os.path.basename(ib.filename)
 
             draw_image.attrib[ns('xlink:href')] = image_path
@@ -405,15 +450,6 @@ if __name__ == "__main__":
 
     with  tempfile.TemporaryDirectory(prefix='bookxml') as tempdir:
         setup_odt(bodf, bs)
-        process_odt_pages(bodf, bs, tempdir=tempdir, link_images = True)
+        process_odt_pages(bodf, bs, tempdir=tempdir)
         bodf.save()
-
-
-
-
-
-
-
-
-
 
