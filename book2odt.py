@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import os
 import sys
 import ezodf
@@ -355,9 +356,7 @@ def process_odt_pages(bodt, bs, **kwargs):
 
             style_graphic_properties = Element(ns('style:graphic-properties'))
 
-            #TODO: mirroring
-            style_graphic_properties.attrib[ns('style:mirror')] = 'none'
-            #print ('cropping pix(%f, %f, %f, %f)' % (ib.crop_top, ib.crop_right, ib.crop_bottom, ib.crop_left))
+            #TODO: if image itself is to be cropped in the zip bundle, set this rect to 0s
             style_graphic_properties.attrib[ns('fo:clip')] = \
                      'rect(%fin, %fin, %fin, %fin)' % (ib.crop_top, 
                                                        ib.crop_right, 
@@ -411,6 +410,7 @@ def process_odt_pages(bodt, bs, **kwargs):
                 image_path = '..' + ib.filename[len(bs.book_path):]
             else:
                 # create odf image to embed in zip file.  self registers
+                # TODO if desired, crop image
                 odf_image = odfcommon.ODFImageObject(bodf, ib.filename, ib.format)
                 image_path = 'Pictures/' + os.path.basename(ib.filename)
 
@@ -429,18 +429,30 @@ def process_odt_pages(bodt, bs, **kwargs):
 
 if __name__ == "__main__":
     import tempfile
+    import argparse
 
 
-    bookfile = sys.argv[1]
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('-o','--output', type=str, help='write odt to OUTPUT. Default is to write it with the same name as the book in the same folder as the book file.')
+
+    argparser.add_argument('book_file', type=str, help='book file to convert.')
+
+    args = argparser.parse_args()
+
+    bookfile = args.book_file
     bookpath = os.path.dirname(os.path.abspath(bookfile))
-    odffile = os.path.splitext(bookfile)[0] + '.odt'
+
+    if args.output:
+        odffile = args.output
+    else:
+        odffile = os.path.splitext(bookfile)[0] + '.odt'
 
     print (odffile)
 
     bs = bookxml.BookXML(bookfile)
     bodf = ezodf.newdoc('odt', odffile)
 
-    print ("Converting %s to %s..." % (bookfile, odffile))
+    print ("Converting %s\n        to %s." % (bookfile, odffile))
 
     print (bs.info['booktitle'])
     print (bs.info['subtitle'])
@@ -451,5 +463,6 @@ if __name__ == "__main__":
     with  tempfile.TemporaryDirectory(prefix='bookxml') as tempdir:
         setup_odt(bodf, bs)
         process_odt_pages(bodf, bs, tempdir=tempdir)
+        print ('Saving odt file. May take a few minutes to store all the images.')
         bodf.save()
 
