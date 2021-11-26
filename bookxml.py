@@ -426,7 +426,7 @@ def javaxml_to_python(object_):
                         if 'class' in to_add.attrib:
                             current_object[key] = javaxml_to_python(to_add)
 
-                        elif 'udref' in to_add.attrib:
+                        elif 'idref' in to_add.attrib:
                             current_object[key] = to_add.attrib["idref"]
 
                     elif to_add.tag == "string":
