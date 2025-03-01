@@ -31,7 +31,10 @@ def create_frame(pageno, frameno, x,y, width, height, zindex, transparent=False)
 def setup_odt(bodf, bs):
     # set up metadata
     e = Element(ns('dc:creator'))
-    e.text = bs.info['authorname']
+    if 'authorname' in bs.info:
+        e.text = bs.info['authorname']
+    else:
+        e.text = ''
     bodf.meta.meta.append(e)
     e = Element(ns('dc:title'))
     e.text = bs.info['booktitle']
@@ -330,16 +333,18 @@ def process_odt_pages(bodt, bs, **kwargs):
             # the DPI there, and then link to that. Optionally we
             # can fix the DPI in place, permanently modifying the
             # original image.
-            if kwargs.get('link_images',False):
-                if kwargs.get('fix_in_place', False):
+            if kwargs.get('link_images'):
+                if kwargs.get('fix_in_place'):
                     save_disk = bookxml.ImageBox.OVERWRITE
                 else:
                     save_disk = bookxml.ImageBox.SAVEASCOPY
                 ib.fix_dpi(save_disk, **kwargs)
+            elif kwargs.get('crop_images'):
+                ib.crop_file()
             else:
                 ib.fix_dpi(**kwargs)
 
-            ib.crop_image()
+            ib.calculate_crop()
 
         print ('image boxes...', end='')
         
@@ -434,6 +439,8 @@ if __name__ == "__main__":
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument('-o','--output', type=str, help='write odt to OUTPUT. Default is to write it with the same name as the book in the same folder as the book file.')
+    argparser.add_argument('-c','--crop', action='store_const', const=True, 
+                           help='Crop the images stored in the zip file, rather than just zoom and soft crop them. Leaves original image files alone.')
 
     argparser.add_argument('book_file', type=str, help='book file to convert.')
 
@@ -456,13 +463,15 @@ if __name__ == "__main__":
 
     print (bs.info['booktitle'])
     print (bs.info['subtitle'])
-    print (bs.info['authorname'])
+    if 'authorname' in bs.info:
+        print (bs.info['authorname'])
     print ('Width: %d, Height: %d' % (bs.width, bs.height))
     print ('Pages: %d' % len(bs.pages))
 
     with  tempfile.TemporaryDirectory(prefix='bookxml') as tempdir:
         setup_odt(bodf, bs)
-        process_odt_pages(bodf, bs, tempdir=tempdir)
+        process_odt_pages(bodf, bs, tempdir=tempdir, crop_images=args.crop)
+        #process_odt_pages(bodf, bs)
         print ('Saving odt file. May take a few minutes to store all the images.')
         bodf.save()
 

@@ -29,7 +29,11 @@ class ImageBox(object):
     def __init__(self, filepath):
         self.filename = filepath
         image = PIL.Image.open(filepath)
-        self.dpi = image.info['dpi']
+        if 'dpi' in image.info:
+            self.dpi = image.info['dpi']
+        else:
+            self.dpi = (72, 72)
+
         self.format = image.format.lower()
         self.img_size = image.size
         self.box_x = 0
@@ -80,7 +84,7 @@ class ImageBox(object):
                     with open(newfile,'wb') as newfileobj:
                         newfileobj.write(open(self.filename,'rb').read())
                 else:
-                    newfileobj = tempfile.NamedTemporaryFile(delete=False, suffix='.%s' % self.format)
+                    newfileobj = tempfile.NamedTemporaryFile(delete=False, prefix='bookxml', suffix='.%s' % self.format)
                     newfileobj.write(open(self.filename,'rb').read())
                     newfile = newfileobj.name
                     newfileobj.close()
@@ -107,7 +111,7 @@ class ImageBox(object):
             self.filename = newfile
             self.dpi = (300,300)
 
-    def crop_image(self):
+    def calculate_crop(self):
         """
             Converts the BookSmart style of image zooming and placement into
             some crop measurements that the ODF formats use.  DPI of the image
@@ -192,6 +196,28 @@ class ImageBox(object):
         self.crop_bottom = crop_bottom / self.dpi[1]
         self.crop_left = crop_left / self.dpi[0]
         self.crop_right = crop_right / self.dpi[0]
+
+    def crop_file(self):
+        # just assume a default of 300x300
+        self.dpi = (300,300)
+        self.calculate_crop()
+
+        area = (self.crop_left * 300, self.crop_top * 300,
+                self.img_size[0] - self.crop_right * 300,
+                self.img_size[1] - self.crop_bottom * 300)
+
+        newfileobj = tempfile.NamedTemporaryFile(delete=False, prefix='bookxml', suffix='.%s' % self.format)
+        newfile = newfileobj.name
+        newfileobj.close()
+        img = PIL.Image.open(self.filename)
+        img.crop(area).save(newfile, dpi=(300,00))
+        self.filename = newfile
+        self.crop_top = 0
+        self.crop_bottom = 0
+        self.crop_left = 0
+        self.crop_right = 0
+
+        
 
     def __str__(self):
         return ' %s, %s %d %d, %d %d, %d' % (self.filename, self.format, self.dpi[0], self.box_x,
